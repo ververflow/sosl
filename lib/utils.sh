@@ -104,7 +104,7 @@ git_revert_changes() {
 
 git_commit_sosl() {
   local target="$1" domain="$2" old_score="$3" new_score="$4"
-  git -C "$target" diff --name-only | xargs -r git -C "$target" add
+  git -C "$target" add -u
   git -C "$target" commit -m "$(cat <<EOF
 sosl($domain): $old_score → $new_score
 

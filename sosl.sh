@@ -87,12 +87,25 @@ if [[ -n "$CONFIG_FILE" ]]; then
     grep -vnE '^\s*(#|$|[A-Z_]+[A-Z0-9_]*=)' "$CONFIG_FILE" | head -3
     exit 1
   fi
-  # Source config (bash key=value format), but don't override CLI args
-  _domain="${DOMAIN_DIR}" _target="${TARGET_DIR}"
+  # Save all CLI-set values, source config, restore CLI values (CLI wins)
+  _save_domain="$DOMAIN_DIR" _save_target="$TARGET_DIR"
+  _save_max_iter="$MAX_ITERATIONS" _save_max_hours="$MAX_HOURS"
+  _save_max_cost="$MAX_COST_USD" _save_budget="$BUDGET_PER_ITER"
+  _save_samples="$SAMPLES" _save_model="$MODEL"
+  _save_health="$HEALTH_CHECK_URL" _save_resume="$RESUME" _save_dry="$DRY_RUN"
   source "$CONFIG_FILE"
-  # CLI args take precedence: restore if they were set
-  [[ -n "$_domain" ]] && DOMAIN_DIR="$_domain"
-  [[ -n "$_target" ]] && TARGET_DIR="$_target"
+  # Restore CLI args (non-empty = was set on CLI)
+  [[ -n "$_save_domain" ]] && DOMAIN_DIR="$_save_domain"
+  [[ -n "$_save_target" ]] && TARGET_DIR="$_save_target"
+  [[ "$_save_max_iter" != "50" ]] && MAX_ITERATIONS="$_save_max_iter"
+  [[ "$_save_max_hours" != "10" ]] && MAX_HOURS="$_save_max_hours"
+  [[ "$_save_max_cost" != "25.00" ]] && MAX_COST_USD="$_save_max_cost"
+  [[ "$_save_budget" != "1.00" ]] && BUDGET_PER_ITER="$_save_budget"
+  [[ "$_save_samples" != "5" ]] && SAMPLES="$_save_samples"
+  [[ "$_save_model" != "claude-sonnet-4-5" ]] && MODEL="$_save_model"
+  [[ -n "$_save_health" ]] && HEALTH_CHECK_URL="$_save_health"
+  [[ "$_save_resume" == "true" ]] && RESUME=true
+  [[ "$_save_dry" == "true" ]] && DRY_RUN=true
 fi
 
 # ── Validate ────────────────────────────────────────────────────────────────

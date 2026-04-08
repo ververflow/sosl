@@ -8,6 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/utils.sh"
+source "$SCRIPT_DIR/lib/annotate.sh"
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 TARGET_DIR=""
@@ -138,13 +139,22 @@ for i in "${!DOMAIN_LIST[@]}"; do
     filtered_args+=("$arg")
   done
 
+  # Only add health-check if original args included one (code-quality/bundle-size don't need servers)
+  health_args=()
+  for arg in "${SOSL_ARGS[@]}"; do
+    if [[ "$arg" == "--health-check" ]]; then
+      health_args=(--health-check "http://localhost:${frontend_port}")
+      break
+    fi
+  done
+
   log "[$domain] Launching SOSL (port:$frontend_port, log: $logfile)..."
 
   TARGET_URL="http://localhost:${frontend_port}" \
   bash "$SCRIPT_DIR/sosl.sh" \
     --domain "$domain_dir" \
     --target "$worktree_path" \
-    --health-check "http://localhost:${frontend_port}" \
+    "${health_args[@]}" \
     "${filtered_args[@]}" \
     > "$logfile" 2>&1 &
 
@@ -180,7 +190,6 @@ fi
 for domain in "${DOMAIN_LIST[@]}"; do
   worktree_path="$WORKTREE_BASE/$domain"
   if [[ -f "$worktree_path/.sosl/experiments.jsonl" ]]; then
-    source "$SCRIPT_DIR/lib/annotate.sh"
     write_summary "$worktree_path" "$domain"
     log "[$domain] Summary: $worktree_path/.sosl/SUMMARY.md"
   fi
