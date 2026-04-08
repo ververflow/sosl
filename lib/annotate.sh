@@ -16,10 +16,11 @@ append_experiment() {
   mkdir -p "$target_dir/.sosl"
 
   python3 -c "
-import json, datetime
+import json, datetime, os
+os.makedirs('$target_dir/.sosl', exist_ok=True)
 
 entry = {
-    'ts': datetime.datetime.utcnow().isoformat() + 'Z',
+    'ts': datetime.datetime.now(datetime.UTC).isoformat().replace('+00:00', 'Z'),
     'iter': int($iteration),
     'domain': '$domain',
     'score_before': float($score_before) if '$score_before' else None,

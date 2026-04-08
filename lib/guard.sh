@@ -12,7 +12,7 @@ run_guards() {
 
   # 1. Changed files count check (prevent mass rewrites)
   local changed_count
-  changed_count=$(git -C "$target_dir" diff --name-only | wc -l)
+  changed_count=$(git -C "$target_dir" diff --name-only | wc -l | tr -d '[:space:]')
   if [[ "$changed_count" -gt 50 ]]; then
     echo "Too many files changed ($changed_count > 50)"
     return 1
@@ -26,12 +26,21 @@ run_guards() {
     return 1
   fi
 
-  # 3. No new eslint-disable comments
-  local disable_before disable_after
-  disable_before=$(git -C "$target_dir" stash list > /dev/null 2>&1; git -C "$target_dir" diff HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' | grep -c '^\-.*eslint-disable' || echo 0)
-  disable_after=$(git -C "$target_dir" diff HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' | grep -c '^\+.*eslint-disable' || echo 0)
-  if [[ "$disable_after" -gt "$disable_before" ]]; then
-    echo "New eslint-disable comments added ($disable_before → $disable_after)"
+  # 3. No new eslint-disable comments (use python for reliable counting)
+  local disable_added
+  disable_added=$(git -C "$target_dir" diff HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' 2>/dev/null | python3 -c "
+import sys
+added = removed = 0
+for line in sys.stdin:
+    line = line.rstrip()
+    if line.startswith('+') and 'eslint-disable' in line:
+        added += 1
+    elif line.startswith('-') and 'eslint-disable' in line:
+        removed += 1
+print(max(0, added - removed))
+" 2>/dev/null || echo 0)
+  if [[ "$disable_added" -gt 0 ]]; then
+    echo "New eslint-disable comments added ($disable_added net new)"
     return 1
   fi
 

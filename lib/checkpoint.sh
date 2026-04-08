@@ -9,14 +9,15 @@ save_checkpoint() {
   mkdir -p "$checkpoint_dir"
 
   python3 -c "
-import json
+import json, os
+os.makedirs('$checkpoint_dir', exist_ok=True)
 data = {
     'run_id': '$run_id',
     'iteration': int($iteration),
     'baseline': float($baseline),
     'total_cost_usd': float($total_cost),
     'branch': '$branch',
-    'updated_at': __import__('datetime').datetime.utcnow().isoformat() + 'Z'
+    'updated_at': __import__('datetime').datetime.now(__import__('datetime').UTC).isoformat().replace('+00:00', 'Z')
 }
 with open('$checkpoint_dir/checkpoint.json', 'w') as f:
     json.dump(data, f, indent=2)
