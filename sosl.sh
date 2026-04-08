@@ -81,6 +81,12 @@ if [[ -n "$CONFIG_FILE" ]]; then
     log_err "Config file not found: $CONFIG_FILE"
     exit 1
   fi
+  # Validate config contains only variable assignments and comments (no commands)
+  if grep -qvE '^\s*(#|$|[A-Z_]+[A-Z0-9_]*=)' "$CONFIG_FILE"; then
+    log_err "Config file contains non-assignment lines (only KEY=value and comments allowed):"
+    grep -vnE '^\s*(#|$|[A-Z_]+[A-Z0-9_]*=)' "$CONFIG_FILE" | head -3
+    exit 1
+  fi
   # Source config (bash key=value format), but don't override CLI args
   _domain="${DOMAIN_DIR}" _target="${TARGET_DIR}"
   source "$CONFIG_FILE"
@@ -228,6 +234,12 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
     log_warn "Cost limit reached (\$$TOTAL_COST). Stopping."
     break
   fi
+  # Pre-check: if remaining budget < budget_per_iter, don't start (prevents overshoot)
+  remaining=$(float_add "$MAX_COST_USD" "-$TOTAL_COST")
+  if [[ $(float_gt "$BUDGET_PER_ITER" "$remaining") == "1" ]]; then
+    log_warn "Remaining budget (\$$remaining) < per-iter budget (\$$BUDGET_PER_ITER). Stopping."
+    break
+  fi
   if [[ $STAGNATION -ge $STAGNATION_THRESHOLD ]]; then
     log_warn "Stagnation threshold ($STAGNATION_THRESHOLD iterations without improvement). Stopping."
     break
@@ -279,7 +291,7 @@ except (json.JSONDecodeError, KeyError, TypeError):
     print('true')
 " 2>/dev/null || echo "true")
 
-  TOTAL_COST=$(float_calc "$TOTAL_COST + $iter_cost")
+  TOTAL_COST=$(float_add "$TOTAL_COST" "$iter_cost")
   log "Claude cost: \$$iter_cost (total: \$$TOTAL_COST)"
 
   if [[ "$is_error" == "true" ]]; then
@@ -305,7 +317,8 @@ except (json.JSONDecodeError, KeyError, TypeError):
   guard_result=$(run_guards "$GUARD_SCRIPT" "$TARGET_DIR" 2>&1) || {
     log_err "Guard failed: $guard_result"
     git_revert_changes "$TARGET_DIR"
-    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Guard fail: $guard_result"
+    safe_result=$(sanitize_for_log "$guard_result")
+    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Guard fail: $safe_result"
     STAGNATION=$((STAGNATION + 1))
     ITER=$((ITER + 1))
     continue

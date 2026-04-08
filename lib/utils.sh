@@ -39,6 +39,12 @@ to_py_path() {
   fi
 }
 
+# ── Sanitize output for logging (strip potential secrets) ──────────────────
+# Removes lines containing common secret patterns before writing to experiment log
+sanitize_for_log() {
+  echo "$1" | grep -viE '(api_key|secret|token|password|auth|bearer|credential)' | head -5
+}
+
 # ── JSON parsing via python3 ───────────────────────────────────────────────
 # Usage: echo '{"a":1}' | json_get "['a']"
 json_get() {
@@ -60,11 +66,11 @@ import sys; print('1' if float(sys.argv[1]) >= float(sys.argv[2]) else '0')
 PYEOF
 }
 
-# Usage: float_calc "3.5 + 2.1" → prints result
-float_calc() {
-  python3 -c "print($1)"
-  # Note: float_calc still uses interpolation because it accepts expressions
-  # like "3.5 + 2.1". Values come from internal SOSL state, never user input.
+# Usage: float_add 3.5 2.1 → prints 5.6
+float_add() {
+  python3 - "$1" "$2" <<'PYEOF'
+import sys; print(round(float(sys.argv[1]) + float(sys.argv[2]), 6))
+PYEOF
 }
 
 # ── Health check ────────────────────────────────────────────────────────────
@@ -153,5 +159,7 @@ elapsed_hours() {
   local start="$1"
   local now
   now=$(date +%s)
-  python3 -c "print(round(($now - $start) / 3600, 2))"
+  python3 - "$now" "$start" <<'PYEOF'
+import sys; print(round((int(sys.argv[1]) - int(sys.argv[2])) / 3600, 2))
+PYEOF
 }
