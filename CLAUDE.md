@@ -68,6 +68,30 @@ Add a "completeness rule" to every directive: all imports must resolve, all call
 ### Watch for Goodhart's Law
 If the score improves but the code is broken, the metric is being gamed. Example: Lighthouse score went up because a broken import meant less JavaScript loaded. The contra-metric guards (tsc, build, import check) exist to catch this.
 
+## Where SOSL writes (important!)
+
+SOSL writes everything into the **target project**, never into the SOSL repo itself. After a run:
+
+```
+your-project/                        ← the repo being optimized
+├── .sosl/
+│   ├── experiments.jsonl            ← log of all iterations (what was tried, scores, costs)
+│   └── checkpoint.json              ← crash recovery state (deleted after clean exit)
+├── main                             ← UNTOUCHED — SOSL never commits to main
+└── sosl/<domain>/<timestamp>        ← SOSL branch with validated commits
+    ├── commit 1: sosl(code-quality): 983 → 984
+    ├── commit 2: sosl(code-quality): 984 → 986
+    └── ...
+```
+
+The SOSL framework repo (`C:\Dev\sosl\`) is **never modified** by a run. It's a tool you point at projects.
+
+**After a run, you review:**
+- `git log sosl/<domain>/*` — what SOSL committed
+- `git diff main..sosl/<domain>/<timestamp>` — the full diff
+- `.sosl/experiments.jsonl` — what was tried including reverted attempts
+- Then: merge the branch, cherry-pick specific commits, or delete it
+
 ## Conventions
 - All bash scripts use `set -eo pipefail` (not -u, some vars may be unset in trap handlers)
 - All math/JSON via `python3 -c` (no jq/bc — Windows Git Bash compatible)

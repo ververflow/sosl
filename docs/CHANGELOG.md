@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## Next: v0.3.0 — Multi-Project Scalability
+
+Current limitation: directives and guards are project-specific (Next.js, `frontend/` layout). To run SOSL on any project without modifying the SOSL repo:
+
+- [ ] Project-local domain overrides: `your-project/.sosl/domains/performance/` takes precedence over SOSL's built-in domains
+- [ ] Generic guards that auto-detect stack (Next.js vs Vite vs Python etc.)
+- [ ] Scheduler: cron or `claude --schedule` to run SOSL nightly on multiple projects
+- [ ] GitHub Actions workflow for cloud-based runs (no local machine needed overnight)
+- [ ] Judge Agent: fresh-context Claude instance reviews SOSL's commits before marking as ready
+
+---
+
 ## v0.2.0 — Post-Audit Hardening (April 8, 2026)
 
 Tested on HoutCalc (Next.js 16 + FastAPI SaaS). Two runs exposed critical issues, all fixed.

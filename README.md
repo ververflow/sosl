@@ -96,14 +96,40 @@ bash sosl.sh \
   --max-cost 20.00
 ```
 
+### Where SOSL writes
+
+SOSL writes everything into **your project**, not into the SOSL repo:
+
+```
+your-project/                          ← the repo you pointed --target at
+├── .sosl/
+│   ├── experiments.jsonl              ← log of all iterations (tried, scores, costs)
+│   └── checkpoint.json                ← crash recovery (deleted after clean exit)
+├── main                               ← UNTOUCHED — SOSL never commits to main
+└── sosl/<domain>/<timestamp>          ← branch with validated improvement commits
+```
+
+The SOSL framework itself is never modified by a run — it's a tool you point at projects.
+
 ### After each run
 
-SOSL creates:
-- A **git branch** (`sosl/<domain>/<timestamp>`) with committed improvements
-- An **experiment log** (`.sosl/experiments.jsonl`) tracking what was tried
-- A **checkpoint** (`.sosl/checkpoint.json`) for crash recovery
+Review and decide:
 
-Review the branch diff, merge what you like, discard the rest.
+```bash
+cd /path/to/your-project
+
+# See what SOSL committed
+git log --oneline sosl/<domain>/*
+
+# Full diff against main
+git diff main..sosl/<domain>/<timestamp>
+
+# Merge if satisfied
+git checkout main && git merge sosl/<domain>/<timestamp>
+
+# Or delete if not
+git branch -D sosl/<domain>/<timestamp>
+```
 
 ## Built-in Domains
 
