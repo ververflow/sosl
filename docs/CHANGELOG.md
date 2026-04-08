@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## v0.2.0 — Post-Audit Hardening (April 8, 2026)
+
+Tested on HoutCalc (Next.js 16 + FastAPI SaaS). Two runs exposed critical issues, all fixed.
+
+### What changed
+- **Windows path resolution**: Git Bash `/c/Dev/` → `cygpath -w` → `C:\Dev\` for Python. Experiment log and checkpoints now work on Windows.
+- **Noise threshold**: default samples 3→5, per-domain `MIN_NOISE_FLOOR` config (Lighthouse: 3.0). Prevents committing measurement noise.
+- **Guard safety**: only clear `tsconfig.tsbuildinfo`, not `.next` (was crashing the dev server mid-run).
+- **Dangling import detector**: universal guard that checks all `@/` imports resolve to existing files. Catches Claude's most common failure mode.
+- **Suppression blocking**: guards now catch `@ts-ignore` and `@ts-expect-error` in addition to `eslint-disable`.
+- **Directive hardening**: completeness rule, steer toward in-place optimizations.
+- **CLAUDE.md**: comprehensive project guide with hard-won rules from production use.
+- **README.md**: corrected docs, added onboarding guide, production lessons section.
+
+### Lessons learned
+1. **Goodhart's Law manifests on run 1.** Lighthouse score improved because broken import = less JS loaded. Guards caught it after hardening.
+2. **tsc cache causes false positives.** Must clear `tsconfig.tsbuildinfo` before every guard check.
+3. **Lighthouse on dev servers varies 29 points.** Fixed with 5 samples + MIN_NOISE_FLOOR=3.0 → variance dropped to 3 points.
+4. **Claude creates incomplete refactors.** Moves code to new file, forgets to create the file. Dangling import detector is mandatory.
+
+---
+
 ## v0.1.0 — First Implementation (April 8, 2026)
 
 Initial working implementation of the SOSL framework.

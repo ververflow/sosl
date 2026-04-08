@@ -12,12 +12,13 @@ You write:     directive.md  (what to optimize, what's off-limits)
                guard.sh     (smoke tests that must pass)
 
 SOSL runs:     ┌──────────────────────────────────────┐
-               │  1. Measure baseline (median of N)    │
+               │  1. Measure baseline (median of 5)    │
                │  2. Claude makes ONE targeted change  │
-               │  3. Guards check (tests, types, etc.) │
-               │  4. Re-measure (median of N)          │
-               │  5. Improved? → git commit            │
-               │     Not improved? → git revert        │
+               │  3. Guards check (types, imports, etc)│
+               │  4. Re-measure (median of 5)          │
+               │  5. Improved beyond noise floor?       │
+               │     Yes → git commit                  │
+               │     No  → git revert                  │
                │  6. Repeat until done                 │
                └──────────────────────────────────────┘
 
@@ -29,44 +30,141 @@ This is the **REFITA loop**: **R**un → **E**val → **F**ix → **I**terate �
 ## Features
 
 - **Git ratchet** — only improvements survive; regressions are reverted instantly
-- **Statistical confidence** — median of N measurements with MAD-based noise floor; no committing measurement noise
+- **Statistical confidence** — median of 5 measurements with MAD-based noise floor; no committing measurement noise
 - **Contra-metric guards** — prevent [Goodhart's Law](https://en.wikipedia.org/wiki/Goodhart%27s_law) gaming (e.g., can't improve perf by deleting features)
+- **Dangling import detection** — catches Claude's most common failure: referencing files it never created
 - **Scope temperature** — early iterations explore boldly, later iterations polish carefully
 - **Crash recovery** — JSONL experiment log + checkpoints; resume interrupted runs
 - **Parallel domains** — optimize performance, accessibility, code quality, and bundle size simultaneously via git worktrees
 - **Zero dependencies** — pure bash + python3 (stdlib only); no npm/pip install for the framework itself
+- **Windows compatible** — works in Git Bash on Windows (path conversion, no jq/bc dependency)
 
 ## Quick Start
 
+### Prerequisites
+
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`claude` command available)
+- Python 3.8+ (stdlib only)
+- Git
+- Node.js (for Lighthouse/ESLint domains)
+
+### Setup
+
 ```bash
 # 1. Clone SOSL
-git clone https://github.com/your-username/sosl.git
+git clone https://github.com/ververflow/sosl.git
 cd sosl
 
-# 2. Start your dev servers (SOSL measures against localhost)
-# e.g.: bash /path/to/your-project/scripts/dev-start.sh
+# 2. Verify it works
+bash sosl.sh --help
+source lib/confidence.sh && calculate_stats 58 60 57 59 61
+# Should print: 59.0 1.0
+```
 
-# 3. Run a single domain
+### Run on your project
+
+```bash
+# 3. Start your project's dev servers
+#    SOSL measures against localhost — your app must be running
+
+# 4. Dry-run first (no Claude calls, just prints prompts)
+bash sosl.sh \
+  --domain domains/performance \
+  --target /path/to/your-nextjs-app \
+  --max-iterations 3 \
+  --dry-run
+
+# 5. Real run (start small — 3 iterations)
+bash sosl.sh \
+  --domain domains/performance \
+  --target /path/to/your-nextjs-app \
+  --health-check http://localhost:3000 \
+  --max-iterations 3
+
+# 6. Review what SOSL did
+cd /path/to/your-nextjs-app
+git log --oneline sosl/performance/*
+git diff main..sosl/performance/<timestamp>
+
+# 7. If satisfied, scale up (overnight run)
 bash sosl.sh \
   --domain domains/performance \
   --target /path/to/your-nextjs-app \
   --health-check http://localhost:3000 \
   --max-iterations 30 \
-  --max-hours 8
-
-# 4. Next morning: review the branch
-cd /path/to/your-nextjs-app
-git log sosl/performance/*  # See what SOSL found
+  --max-hours 8 \
+  --max-cost 20.00
 ```
+
+### After each run
+
+SOSL creates:
+- A **git branch** (`sosl/<domain>/<timestamp>`) with committed improvements
+- An **experiment log** (`.sosl/experiments.jsonl`) tracking what was tried
+- A **checkpoint** (`.sosl/checkpoint.json`) for crash recovery
+
+Review the branch diff, merge what you like, discard the rest.
 
 ## Built-in Domains
 
-| Domain | Metric | Measurement | Guard |
-|--------|--------|-------------|-------|
-| `performance` | Lighthouse Performance (0-100) | Lighthouse CI headless | Playwright E2E smoke + TypeScript |
-| `accessibility` | Lighthouse Accessibility (0-100) | Lighthouse CI headless | TypeScript compilation |
-| `code-quality` | ESLint errors (inverted) | ESLint JSON output | TypeScript + Vitest |
-| `bundle-size` | .next build size (inverted) | `npm run build` + `du` | Build success + page count |
+| Domain | Metric | Guard | Best for |
+|--------|--------|-------|----------|
+| `performance` | Lighthouse Performance (0-100) | TypeScript + imports + build | Next.js/React apps |
+| `accessibility` | Lighthouse Accessibility (0-100) | TypeScript | Any web app |
+| `code-quality` | ESLint errors (inverted) | TypeScript + Vitest | Any TS/JS project |
+| `bundle-size` | .next build size (inverted) | Build success + page count | Next.js apps |
+
+## Custom Domains
+
+Create a new domain in 3 files:
+
+```
+domains/your-domain/
+├── directive.md    # What to optimize and what's off-limits
+├── measure.sh      # Must print a single number (higher = better)
+├── guard.sh        # Must exit 0 if safe, exit 1 if not
+└── config.sh       # Optional: MIN_NOISE_FLOOR, other settings
+```
+
+**measure.sh** contract:
+```bash
+#!/bin/bash
+set -euo pipefail
+TARGET_DIR="${1:-.}"
+# Your measurement here — must print ONE number to stdout
+echo "42.5"
+```
+
+**guard.sh** contract:
+```bash
+#!/bin/bash
+set -euo pipefail
+TARGET_DIR="${1:-.}"
+# Your checks here — exit 1 with reason to revert changes
+cd "$TARGET_DIR" && npm test || { echo "GUARD FAIL: tests broke"; exit 1; }
+echo "GUARD PASS"
+```
+
+See [docs/adding-domains.md](docs/adding-domains.md) for the full guide and [docs/writing-directives.md](docs/writing-directives.md) for prompt tips.
+
+## Configuration
+
+```bash
+# All flags
+bash sosl.sh \
+  --domain domains/performance \   # Required: which domain
+  --target /path/to/repo \         # Required: repo to optimize
+  --config examples/config.conf \  # Optional: load from file
+  --max-iterations 50 \            # Default: 50
+  --max-hours 10 \                 # Default: 10
+  --max-cost 25.00 \               # Default: 25.00 USD
+  --budget-per-iter 1.00 \         # Default: 1.00 USD per Claude call
+  --samples 5 \                    # Default: 5 (measurements per eval)
+  --model claude-sonnet-4-5 \      # Default: claude-sonnet-4-5
+  --health-check http://localhost:3000 \  # Optional: URL check before start
+  --resume \                       # Resume from checkpoint
+  --dry-run                        # Print prompts, don't call Claude
+```
 
 ## Parallel Optimization
 
@@ -80,62 +178,28 @@ bash sosl-parallel.sh \
   --max-hours 8
 ```
 
-Wake up with 3 branches of improvements ready for review.
-
-## Custom Domains
-
-Create a new domain in 3 files:
-
-```
-domains/your-domain/
-├── directive.md    # Instructions for Claude (what to optimize, scope limits)
-├── measure.sh      # Must output a single number (higher = better)
-└── guard.sh        # Must exit 0 if changes are safe, exit 1 if not
-```
-
-See [docs/adding-domains.md](docs/adding-domains.md) for the full guide.
-
-## Configuration
-
-All options can be set via CLI flags or a config file:
-
-```bash
-# Via config file
-bash sosl.sh --config examples/houtcalc-perf.conf
-
-# Via flags
-bash sosl.sh \
-  --domain domains/performance \
-  --target /path/to/repo \
-  --max-iterations 50 \
-  --max-hours 10 \
-  --max-cost 25.00 \
-  --budget-per-iter 1.00 \
-  --samples 3 \
-  --model claude-sonnet-4-5 \
-  --health-check http://localhost:3000
-```
-
 ## Architecture
 
 SOSL operates on 5 levels:
 
 | Level | What | Scope |
 |-------|------|-------|
-| **Nano** | Atomic change | One git commit, one file modification |
+| **Nano** | Atomic change | One git commit |
 | **Micro** | REFITA loop | Single iteration: measure → change → verify → commit/revert |
-| **Meso** | Self-annealing | Scope temperature across iterations: explore → refine → polish |
-| **Macro** | SOSL night run | One domain, one branch, 8 hours of autonomous optimization |
-| **System** | Parallel SOSL | Multiple domains optimizing simultaneously via worktrees |
+| **Meso** | Self-annealing | Scope temperature: explore → refine → polish |
+| **Macro** | SOSL night run | One domain, one branch, hours of autonomous optimization |
+| **System** | Parallel SOSL | Multiple domains via worktrees |
 
 See [docs/architecture.md](docs/architecture.md) for the full breakdown.
 
-## Requirements
+## Lessons from Production Use
 
-- **Claude Code CLI** (`claude` command available)
-- **Python 3.8+** (stdlib only, no packages needed)
-- **Git** (for branch management and ratchet)
-- **Node.js** (for Lighthouse CI, Playwright, ESLint — depending on domain)
+SOSL has been tested on [HoutCalc](https://houtcalc.nl) (Next.js 16 + FastAPI SaaS). Key findings:
+
+- **Guards are the product, not the loop.** The loop is trivial. The guards determine whether SOSL commits good code or broken code. Invest time in guards first.
+- **Goodhart's Law manifests immediately.** First run: Lighthouse score improved because a broken import meant less JavaScript loaded. The "improvement" was actually broken code. Contra-metric guards (TypeScript check, import resolution, build check) caught this after we hardened them.
+- **Lighthouse on dev servers is noisy.** Scores varied 29 points on the same code. Fixed with 5 samples + MIN_NOISE_FLOOR=3.0. Variance dropped to 3 points.
+- **Claude creates incomplete refactors.** It will move code to a new file but forget to create the file. The dangling import detector in `lib/guard.sh` catches this.
 
 ## Born From
 
@@ -147,4 +211,4 @@ SOSL builds on the shoulders of:
 
 ## License
 
-MIT
+MIT — [VerverFlow Innovations](https://ververflow.nl)

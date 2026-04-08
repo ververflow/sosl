@@ -1,7 +1,7 @@
 # SOSL — Self-Optimizing Software Loop
 
 ## What this is
-Framework for autonomous software optimization using Claude Code. Runs overnight, measures a metric, commits improvements, reverts regressions.
+Framework for autonomous software optimization using Claude Code. Runs overnight, measures a metric, commits improvements, reverts regressions. Open-source, meant to be forked and adapted.
 
 ## Stack
 - Pure bash + python3 (no npm/pip dependencies for the framework itself)
@@ -9,23 +9,85 @@ Framework for autonomous software optimization using Claude Code. Runs overnight
 - Git for version control and ratchet mechanism
 
 ## Structure
-- `sosl.sh` — main loop runner
-- `sosl-parallel.sh` — multi-domain orchestrator
-- `lib/` — shared libraries (eval, confidence, guards, checkpoint, annotate, temperature)
-- `domains/` — per-domain configs (directive.md, measure.sh, guard.sh)
-- `docs/` — documentation
-- `examples/` — example configs
+```
+sosl.sh                  # Main loop runner — the entry point for everything
+sosl-parallel.sh         # Multi-domain orchestrator (worktree-based)
+lib/
+  utils.sh               # Logging, json_get, float math, path conversion, health checks
+  eval.sh                # measure_robust: runs measure.sh N times, returns median + MAD
+  confidence.sh          # calculate_stats, is_significant (MAD-based noise floor)
+  guard.sh               # run_guards: universal guards + domain-specific guard.sh
+  checkpoint.sh          # save/load/clear checkpoint for crash recovery
+  annotate.sh            # JSONL experiment log + summary generation
+  temperature.sh         # Scope guidance: EXPLORATION → REFINEMENT → POLISHING
+domains/                 # Each domain = directive.md + measure.sh + guard.sh + optional config.sh
+  performance/           # Lighthouse Performance score
+  accessibility/         # Lighthouse Accessibility score
+  code-quality/          # ESLint error count (inverted)
+  bundle-size/           # Next.js build size (inverted)
+examples/
+  houtcalc-perf.conf     # Working config for HoutCalc (Next.js + FastAPI SaaS)
+docs/
+  CHANGELOG.md           # Evolution: braindump → v1 → v2 → v3 → implementation
+  architecture.md        # 5-level structure (nano → micro → meso → macro → system)
+  writing-directives.md  # How to write effective optimization prompts
+  adding-domains.md      # How to create custom domains
+```
+
+## Contracts
+These are the interfaces that make SOSL work. Get them wrong and the loop breaks.
+
+**measure.sh**: takes target dir as arg, prints ONE number to stdout (higher = better), exit 0 on success. Must complete in < 120s. Median of N runs handles noise — each measure.sh run is a single sample.
+
+**guard.sh**: takes target dir as arg, exit 0 = safe to measure, exit 1 = revert changes (print reason to stdout). Guards run BEFORE measurement — a guard failure means the change never gets measured.
+
+**directive.md**: markdown prompt for Claude. Must contain: objective, allowed scope, forbidden scope, strategy. Uses `{{CURRENT_SCORE}}`, `{{ITERATION}}`, `{{MAX_ITERATIONS}}`, `{{RECENT_RESULTS}}`, `{{SCOPE_GUIDANCE}}` placeholders.
+
+**config.sh**: optional per-domain config. Currently supports `MIN_NOISE_FLOOR` (default: 0.5, Lighthouse domains use 3.0).
+
+## Hard-Won Rules (from real-world runs)
+
+### Guards are the product, not the loop
+The loop is 50 lines of bash. The guards are what make SOSL trustworthy. A metric improving while guards pass does NOT mean the change is good — it means the guards aren't paranoid enough yet.
+
+### Always clear tsc incremental cache before checking
+tsc uses cached results from `.tsbuildinfo`. If you don't clear it, tsc will pass on broken code because it's checking against a previous successful run. Clear `tsconfig.tsbuildinfo` only — NOT `.next` (that kills the dev server).
+
+### Dangling import detection is mandatory for JS/TS
+Claude's most common failure: move code to a new file but forget to create the file. The universal guard in `lib/guard.sh` checks all `@/` imports resolve to existing files. This catches broken references that tsc might miss due to caching.
+
+### Lighthouse on dev servers is noisy
+Scores vary 20-30 points on the same code depending on system load, server warmup, and Chrome state. Mitigations:
+- Default 5 samples (not 3)
+- `MIN_NOISE_FLOOR=3.0` for Lighthouse domains
+- Ensure dev server is warm before starting SOSL
+
+### Directive must steer away from risky patterns
+Add a "completeness rule" to every directive: all imports must resolve, all callers must be updated, prefer in-place optimizations over file restructuring. Claude routinely creates incomplete refactors.
+
+### Watch for Goodhart's Law
+If the score improves but the code is broken, the metric is being gamed. Example: Lighthouse score went up because a broken import meant less JavaScript loaded. The contra-metric guards (tsc, build, import check) exist to catch this.
 
 ## Conventions
-- All bash scripts use `set -euo pipefail`
+- All bash scripts use `set -eo pipefail` (not -u, some vars may be unset in trap handlers)
 - All math/JSON via `python3 -c` (no jq/bc — Windows Git Bash compatible)
-- measure.sh contract: exit 0, print single number to stdout (higher = better)
-- guard.sh contract: exit 0 = pass, exit 1 = fail (reason on stdout)
+- Path conversion: use `to_py_path` from utils.sh for any path passed to Python (Git Bash → Windows)
 - Line endings: LF only (enforced by .gitattributes)
+- Commits by SOSL: `sosl(<domain>): <old_score> → <new_score>`
 
 ## Commands
 ```bash
-bash sosl.sh --help                    # Show usage
-bash sosl.sh --domain domains/performance --target /path/to/repo --dry-run  # Test without Claude
-bash sosl.sh --domain domains/performance --target /path/to/repo            # Run optimization
+bash sosl.sh --help                                                          # Show usage
+bash sosl.sh --domain domains/performance --target /path/to/repo --dry-run   # Test without Claude
+bash sosl.sh --domain domains/performance --target /path/to/repo             # Run optimization
+bash sosl.sh --config examples/houtcalc-perf.conf                            # Run via config file
+bash sosl-parallel.sh --target /path/to/repo --domains "performance,code-quality"  # Parallel
 ```
+
+## Working on SOSL itself
+When modifying the framework:
+1. `bash -n <file>` — syntax check every modified script
+2. Test path conversion: `source lib/utils.sh && to_py_path "/c/Dev/something"`
+3. Test confidence: `source lib/confidence.sh && calculate_stats 58 60 57 59 61`
+4. Dry-run before real run: `bash sosl.sh --domain domains/performance --target /path --dry-run --max-iterations 3`
+5. Real run with low iteration count first (3), verify experiment log writes, then scale up
