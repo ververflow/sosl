@@ -42,7 +42,10 @@ to_py_path() {
 # ── Sanitize output for logging (strip potential secrets) ──────────────────
 # Removes lines containing common secret patterns before writing to experiment log
 sanitize_for_log() {
-  echo "$1" | grep -viE '(api_key|secret|token|password|auth|bearer|credential)' | head -5
+  # Strip secrets, keep first line + error lines only, compact
+  echo "$1" | grep -viE '(api_key|secret|token|password|auth|bearer|credential)' | \
+    grep -E '(GUARD|error TS|Error:|FAIL|warning:)' | head -5 | \
+    tr '\n' ' ' | sed 's/  */ /g'
 }
 
 # ── JSON parsing via python3 ───────────────────────────────────────────────

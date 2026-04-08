@@ -66,11 +66,21 @@ lines = lines[-$n:]
 if not lines:
     print('No previous experiments.')
 else:
+    failed_files = set()
     for line in lines:
         e = json.loads(line.strip())
         status = 'IMPROVED' if e['improved'] else 'REVERTED'
         score_after = e['score_after'] if e['score_after'] is not None else '?'
-        print(f'  [{status}] iter {e[\"iter\"]}: {e[\"score_before\"]} -> {score_after} -- {e[\"summary\"]}')
+        summary = e.get('summary', '')[:120]
+        print(f'  [{status}] iter {e[\"iter\"]}: {e[\"score_before\"]} -> {score_after} -- {summary}')
+        # Track files that caused guard failures
+        if 'Guard fail' in e.get('summary', ''):
+            import re
+            for m in re.finditer(r'(\S+\.tsx?)\(', e.get('summary', '')):
+                failed_files.add(m.group(1))
+    if failed_files:
+        print(f'  WARNING: Previous iterations failed on: {", ".join(sorted(failed_files))}')
+        print(f'  If you modify these files, ensure ALL references to removed variables/functions are also removed.')
 "
 }
 
