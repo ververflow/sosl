@@ -1,0 +1,13 @@
+# SOSL runtime artifacts (created in target repos, not here)
+.sosl/
+.sosl-worktrees/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
