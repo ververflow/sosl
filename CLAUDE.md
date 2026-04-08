@@ -56,6 +56,9 @@ tsc uses cached results from `.tsbuildinfo`. If you don't clear it, tsc will pas
 ### Dangling import detection is mandatory for JS/TS
 Claude's most common failure: move code to a new file but forget to create the file. The universal guard in `lib/guard.sh` checks all `@/` imports resolve to existing files. This catches broken references that tsc might miss due to caching.
 
+### Deterministic metrics beat noisy metrics
+`code-quality` (ESLint) produced 4 correct commits in 5 iterations. `performance` (Lighthouse) produced 0 real improvements despite "improving" the score — noise masked the truth. Always recommend `code-quality` or `bundle-size` as first domain for new users/projects.
+
 ### Lighthouse on dev servers is noisy
 Scores vary 20-30 points on the same code depending on system load, server warmup, and Chrome state. Mitigations:
 - Default 5 samples (not 3)

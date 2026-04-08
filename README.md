@@ -220,6 +220,25 @@ SOSL operates on 5 levels:
 
 See [docs/architecture.md](docs/architecture.md) for the full breakdown.
 
+## Which Domain to Start With
+
+**Start with `code-quality`, not `performance`.**
+
+The single most important factor for SOSL success is **metric determinism**. The same code should produce the same score every time. Here's how the built-in domains compare:
+
+| Domain | Deterministic? | Noise | Recommended for first run? |
+|--------|---------------|-------|----------------------------|
+| `code-quality` | Yes — ESLint count is exact | 0 points | **Yes** — best first domain |
+| `bundle-size` | Yes — build output is exact | 0 points | Yes (but slow — full build per sample) |
+| `accessibility` | Mostly — Lighthouse a11y is stable | ~2 points | After code-quality |
+| `performance` | No — Lighthouse perf varies heavily | 3-29 points | Last — requires warm server, high noise floor |
+
+**Why this matters:** With a noisy metric, SOSL can't distinguish real improvements from measurement noise. Our first run on Lighthouse performance "improved" the score by 27 points — but A/B testing showed zero actual difference. The score fluctuated based on system load, not code quality.
+
+With `code-quality` (ESLint), every committed change is a real fix. Zero false positives. In our test run: 4 of 5 iterations produced correct, mergeable commits (unused variable removal, useMemo fix, exhaustive-deps fix).
+
+**The core principle:** the strength of the entire system depends on how sharp and reliable the measurement is. A perfect loop with a noisy metric produces garbage. A simple loop with a deterministic metric produces real value.
+
 ## Lessons from Production Use
 
 SOSL has been tested on [HoutCalc](https://houtcalc.nl) (Next.js 16 + FastAPI SaaS). Key findings:
@@ -228,6 +247,7 @@ SOSL has been tested on [HoutCalc](https://houtcalc.nl) (Next.js 16 + FastAPI Sa
 - **Goodhart's Law manifests immediately.** First run: Lighthouse score improved because a broken import meant less JavaScript loaded. The "improvement" was actually broken code. Contra-metric guards (TypeScript check, import resolution, build check) caught this after we hardened them.
 - **Lighthouse on dev servers is noisy.** Scores varied 29 points on the same code. Fixed with 5 samples + MIN_NOISE_FLOOR=3.0. Variance dropped to 3 points.
 - **Claude creates incomplete refactors.** It will move code to a new file but forget to create the file. The dangling import detector in `lib/guard.sh` catches this.
+- **Deterministic metrics beat noisy metrics.** `code-quality` (ESLint) produced 4 correct commits in 5 iterations. `performance` (Lighthouse) produced 0 real improvements in 5 iterations despite "improving" the score. Start with what you can measure reliably.
 
 ## Born From
 
