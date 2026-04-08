@@ -28,9 +28,17 @@ Do NOT do any of the following:
 - Modify backend code (`backend/` directory)
 - Modify or delete test files (`e2e/`, `*.test.*`, `*.spec.*`)
 - Change environment variables or deployment configuration
-- Add `eslint-disable` comments
+- Add `eslint-disable`, `@ts-ignore`, or `@ts-expect-error` comments
 - Install new npm packages (optimize with what's available)
 - Modify `package.json` dependencies
+
+## CRITICAL — Completeness Rule
+Every change must be **self-contained and complete**. After your changes:
+- All imports must point to files that exist
+- If you extract code to a new file, you MUST create that file
+- If you move a function, update ALL callers
+- Run `npx tsc --noEmit` mentally before finishing — would it pass?
+- Incomplete refactors (referencing files you didn't create) will be automatically reverted
 
 ## Strategy
 1. Focus on the **lowest-scoring Lighthouse audit** first (check the audit details)
@@ -38,6 +46,7 @@ Do NOT do any of the following:
 3. Prefer changes with the highest impact-to-risk ratio
 4. If previous experiments show a pattern of what works, build on it
 5. If previous experiments show a pattern of what fails, avoid repeating it
+6. Prefer **in-place optimizations** over file restructuring (less risk of incomplete changes)
 
 ## Output
 After making your change, briefly state:
