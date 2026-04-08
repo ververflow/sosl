@@ -26,6 +26,17 @@ log_file() {
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" >> "$logfile"
 }
 
+# ── Path conversion (Git Bash → Windows for Python) ────────────────────────
+# Git Bash uses /c/Dev/... but Python on Windows needs C:\Dev\... or C:/Dev/...
+to_py_path() {
+  # cygpath converts Git Bash /c/Dev/... to C:/Dev/... which Python understands
+  if command -v cygpath &>/dev/null; then
+    cygpath -w "$1"
+  else
+    echo "$1"
+  fi
+}
+
 # ── JSON parsing via python3 ───────────────────────────────────────────────
 # Usage: echo '{"a":1}' | json_get "['a']"
 json_get() {

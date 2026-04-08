@@ -25,13 +25,16 @@ print(f'{round(med, 2)} {round(mad, 2)}')
 }
 
 # Check if improvement is statistically significant
-# Improvement must exceed max(noise_floor * 1.5, 0.5)
+# Improvement must exceed max(noise_floor * 1.5, MIN_NOISE_FLOOR)
+# MIN_NOISE_FLOOR env var can be set per-domain (default: 0.5)
 # Usage: is_significant 62.3 65.1 0.7 → exit 0 if significant
 is_significant() {
   local old="$1" new="$2" noise="$3"
+  local min_noise="${MIN_NOISE_FLOOR:-0.5}"
   python3 -c "
 old, new, noise = float($old), float($new), float($noise)
-threshold = max(noise * 1.5, 0.5)
+min_noise = float($min_noise)
+threshold = max(noise * 1.5, min_noise)
 improvement = new - old
 if improvement > threshold:
     exit(0)

@@ -10,18 +10,19 @@ set -euo pipefail
 TARGET_DIR="${1:-.}"
 FRONTEND_DIR="$TARGET_DIR/frontend"
 
-# ── 1. Clear all caches (lesson: tsc cache caused false positive) ────────────
+# ── 1. Clear tsc incremental cache only (NOT .next — that kills the dev server)
 if [[ -d "$FRONTEND_DIR" ]]; then
+  local py_frontend
+  py_frontend=$(python3 -c "import os; print(os.path.normpath('$FRONTEND_DIR'))" 2>/dev/null || echo "$FRONTEND_DIR")
   python3 -c "
-import shutil, os
-for d in ['node_modules/.cache', '.next', 'tsconfig.tsbuildinfo']:
-    p = os.path.join('$FRONTEND_DIR', d)
-    if os.path.isdir(p): shutil.rmtree(p, ignore_errors=True)
-    elif os.path.isfile(p): os.remove(p)
+import os
+for f in ['tsconfig.tsbuildinfo', '.tsbuildinfo']:
+    p = os.path.join(r'$py_frontend', f)
+    if os.path.exists(p): os.remove(p)
 " 2>/dev/null || true
 fi
 
-# ── 2. TypeScript must compile (fresh, no cache) ────────────────────────────
+# ── 2. TypeScript must compile (fresh incremental check) ─────────────────────
 if [[ -f "$FRONTEND_DIR/tsconfig.json" ]]; then
   cd "$FRONTEND_DIR"
   TSC_OUTPUT=$(npx tsc --noEmit 2>&1) || {

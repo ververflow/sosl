@@ -23,7 +23,7 @@ MAX_ITERATIONS=50
 MAX_HOURS=10
 MAX_COST_USD=25.00
 BUDGET_PER_ITER=1.00
-SAMPLES=3
+SAMPLES=5
 MODEL="claude-sonnet-4-5"
 HEALTH_CHECK_URL=""
 RESUME=false
@@ -101,6 +101,11 @@ DOMAIN_NAME="$(basename "$DOMAIN_DIR")"
 DIRECTIVE_FILE="$DOMAIN_DIR/directive.md"
 MEASURE_SCRIPT="$DOMAIN_DIR/measure.sh"
 GUARD_SCRIPT="$DOMAIN_DIR/guard.sh"
+
+# Load per-domain config (e.g., MIN_NOISE_FLOOR)
+if [[ -f "$DOMAIN_DIR/config.sh" ]]; then
+  source "$DOMAIN_DIR/config.sh"
+fi
 
 [[ ! -f "$DIRECTIVE_FILE" ]] && { log_err "Missing: $DIRECTIVE_FILE"; exit 1; }
 [[ ! -f "$MEASURE_SCRIPT" ]] && { log_err "Missing: $MEASURE_SCRIPT"; exit 1; }
