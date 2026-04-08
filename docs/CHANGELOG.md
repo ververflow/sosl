@@ -60,6 +60,8 @@ Initial working implementation of the SOSL framework.
 
 ## Pre-release: Design Evolution
 
+All design phases completed in a single day — rapid prototyping from braindump to architecture lock.
+
 ### v3 — Architecture Lock (April 8, 2026)
 Critical additions from research synthesis:
 - **Runtime isolation**: git worktrees aren't enough — parallel instances need separate ports, caches, DBs

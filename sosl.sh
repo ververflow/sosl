@@ -42,7 +42,7 @@ Required:
   --target <dir>          Target repository to optimize
 
 Options:
-  --config <file>         Load options from config file (bash key=value format)
+  --config <file>         Load options from config file (CLI flags override config values)
   --max-iterations <N>    Maximum iterations (default: 50)
   --max-hours <N>         Maximum wall-clock hours (default: 10)
   --max-cost <N>          Maximum total cost in USD (default: 25.00)

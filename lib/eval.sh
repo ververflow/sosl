@@ -11,10 +11,16 @@ measure_robust() {
   local values=()
 
   for ((i=1; i<=n_samples; i++)); do
-    local score
-    score=$(bash "$measure_script" "$target_dir" 2>/dev/null)
-    if [[ $? -ne 0 ]] || [[ -z "$score" ]]; then
-      log_warn "Measurement $i/$n_samples failed"
+    local score exit_code
+    score=$(bash "$measure_script" "$target_dir" 2>/dev/null) || true
+    exit_code=${PIPESTATUS[0]:-$?}
+    # Score "0" from a failed measure is a measurement failure, not a real score
+    if [[ -z "$score" ]]; then
+      log_warn "Measurement $i/$n_samples failed (no output)"
+      continue
+    fi
+    if [[ "$score" == "0" ]] && [[ "$exit_code" -ne 0 ]]; then
+      log_warn "Measurement $i/$n_samples failed (exit $exit_code, score 0)"
       continue
     fi
     values+=("$score")

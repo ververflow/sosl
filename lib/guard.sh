@@ -49,8 +49,22 @@ print(max(0, added - removed))
   fi
 
   # 4. No new dependencies added to package.json
+  # Catches all version formats: ^1.0, ~1.0, 1.0.0, *, workspace:*, git+, file:
   local new_pkgs
-  new_pkgs=$(git -C "$target_dir" diff HEAD -- '*/package.json' 'package.json' 2>/dev/null | grep -cE '^\+\s+"[^"]+"\s*:\s*"[\^~]' || true)
+  new_pkgs=$(git -C "$target_dir" diff HEAD -- '*/package.json' 'package.json' 2>/dev/null | python3 -c "
+import sys, re
+added = 0
+in_deps = False
+for line in sys.stdin:
+    # Track if we're in a dependencies block (added lines only)
+    if re.match(r'^\+\s+\"(dependencies|devDependencies|peerDependencies)\"', line):
+        in_deps = True
+    elif line.startswith('+') and in_deps and re.match(r'^\+\s+\"[^\"]+\"\s*:', line):
+        added += 1
+    elif line.startswith('+') and ('}' in line):
+        in_deps = False
+print(added)
+" 2>/dev/null || echo 0)
   new_pkgs=$(echo "$new_pkgs" | tr -d '[:space:]')
   if [[ -n "$new_pkgs" ]] && [[ "$new_pkgs" -gt 0 ]]; then
     echo "New packages added to package.json ($new_pkgs new dependencies)"

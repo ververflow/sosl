@@ -1,6 +1,10 @@
 #!/bin/bash
 # SOSL Domain: Bundle Size — Measurement script
 # Builds Next.js, measures .next output size, inverts for higher=better
+#
+# NOTE: Each call runs `npm run build`. With 5 samples per eval, that's
+# 5 builds per measurement + builds in guard.sh. Consider --samples 1
+# for this domain since build output is deterministic (same code = same size).
 
 set -euo pipefail
 

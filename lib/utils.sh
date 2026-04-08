@@ -46,17 +46,23 @@ json_get() {
 # ── Float math via python3 ─────────────────────────────────────────────────
 # Usage: float_gt 3.5 2.1 → prints "1" or "0"
 float_gt() {
-  python3 -c "print('1' if float($1) > float($2) else '0')"
+  python3 - "$1" "$2" <<'PYEOF'
+import sys; print('1' if float(sys.argv[1]) > float(sys.argv[2]) else '0')
+PYEOF
 }
 
 # Usage: float_gte 3.5 2.1 → prints "1" or "0"
 float_gte() {
-  python3 -c "print('1' if float($1) >= float($2) else '0')"
+  python3 - "$1" "$2" <<'PYEOF'
+import sys; print('1' if float(sys.argv[1]) >= float(sys.argv[2]) else '0')
+PYEOF
 }
 
 # Usage: float_calc "3.5 + 2.1" → prints result
 float_calc() {
   python3 -c "print($1)"
+  # Note: float_calc still uses interpolation because it accepts expressions
+  # like "3.5 + 2.1". Values come from internal SOSL state, never user input.
 }
 
 # ── Health check ────────────────────────────────────────────────────────────
@@ -122,6 +128,12 @@ build_prompt() {
   directive="${directive//\{\{RECENT_RESULTS\}\}/$recent_results}"
   directive="${directive//\{\{SCOPE_GUIDANCE\}\}/$scope_guidance}"
 
+  # Inject audit details if available (written by measure.sh)
+  local audit_details=""
+  if [[ -f "$target_dir/.sosl/last-audit.txt" ]]; then
+    audit_details=$(cat "$target_dir/.sosl/last-audit.txt")
+  fi
+
   # Append working directory instruction
   cat <<EOF
 $directive
@@ -129,7 +141,10 @@ $directive
 ## Working Directory
 You are working in: $target_dir
 Make changes there. Do NOT create files outside this directory.
-
+${audit_details:+
+## Audit Details
+$audit_details
+}
 ## Rules
 - Make exactly ONE targeted change per iteration
 - Do not make multiple unrelated changes

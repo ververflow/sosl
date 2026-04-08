@@ -129,13 +129,23 @@ for i in "${!DOMAIN_LIST[@]}"; do
   WORKTREES+=("$worktree_path")
 
   # Launch SOSL in background
-  log "[$domain] Launching SOSL (frontend:$frontend_port, log: $logfile)..."
+  # Filter --health-check from SOSL_ARGS (wrong port for parallel) and set correct one
+  local filtered_args=()
+  local skip_next=false
+  for arg in "${SOSL_ARGS[@]}"; do
+    if [[ "$skip_next" == true ]]; then skip_next=false; continue; fi
+    if [[ "$arg" == "--health-check" ]]; then skip_next=true; continue; fi
+    filtered_args+=("$arg")
+  done
+
+  log "[$domain] Launching SOSL (port:$frontend_port, log: $logfile)..."
 
   TARGET_URL="http://localhost:${frontend_port}" \
   bash "$SCRIPT_DIR/sosl.sh" \
     --domain "$domain_dir" \
     --target "$worktree_path" \
-    "${SOSL_ARGS[@]}" \
+    --health-check "http://localhost:${frontend_port}" \
+    "${filtered_args[@]}" \
     > "$logfile" 2>&1 &
 
   PIDS+=($!)
@@ -176,6 +186,6 @@ for domain in "${DOMAIN_LIST[@]}"; do
   fi
 done
 
-log ""
+echo ""
 log "Review branches and merge improvements manually."
 log "Worktrees are at: $WORKTREE_BASE/"

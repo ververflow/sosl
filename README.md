@@ -48,6 +48,8 @@ This is the **REFITA loop**: **R**un → **E**val → **F**ix → **I**terate �
 - Git
 - Node.js (for Lighthouse/ESLint domains)
 
+All scripts are invoked with `bash sosl.sh` syntax — no `chmod +x` needed.
+
 ### Setup
 
 ```bash
