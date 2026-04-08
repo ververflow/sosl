@@ -95,7 +95,8 @@ git_has_changes() {
 git_revert_changes() {
   local target="$1"
   git -C "$target" checkout -- .
-  git -C "$target" clean -fd > /dev/null 2>&1
+  # Exclude .sosl/ from clean — it contains experiment log and checkpoints
+  git -C "$target" clean -fd --exclude=.sosl > /dev/null 2>&1
 }
 
 git_commit_sosl() {
