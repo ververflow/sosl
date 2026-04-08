@@ -10,12 +10,15 @@ A single iteration of the optimization cycle:
 
 ```
 Run      → Claude makes one targeted change
-Eval     → Measure the target metric (median of N samples)
-Fix      → If metric worsened or guard failed: git revert
-Iterate  → If metric improved: git commit, update baseline
-Test     → Verify contra-metrics (guards) aren't violated
+Eval     → Guards check first (types, imports, build). If fail → revert immediately
+Fix      → Measure the target metric (median of N samples)
+Iterate  → If improved beyond noise floor: git commit, update baseline. Else: revert
+Test     → Contra-metric guards ran before measurement — no broken code gets scored
 Annotate → Log the experiment to JSONL for future iterations
 ```
+
+Note: Guards run BEFORE measurement. This prevents Goodhart gaming — broken code
+that happens to improve the metric score never reaches the commit decision.
 
 ### Level 2: Self-Annealing (meso)
 Scope temperature across iterations within a single run:
@@ -72,7 +75,8 @@ SOSL is **stateless per iteration**: each Claude call is a fresh subprocess with
 
 - `.sosl/experiments.jsonl` — append-only experiment log (survives crashes)
 - `.sosl/checkpoint.json` — current iteration + baseline (enables resume)
-- `.sosl/SUMMARY.md` — human-readable summary (generated after completion)
+- `.sosl/SUMMARY.md` — human-readable summary (generated after completion, both solo and parallel runs)
+- `.sosl/last-audit.txt` — top failing Lighthouse audits (injected into Claude's prompt)
 - Git history — the commits themselves are the primary record
 
 ## Safety Layers
@@ -81,4 +85,5 @@ SOSL is **stateless per iteration**: each Claude call is a fresh subprocess with
 2. **Guard rails** — domain-specific + universal (file count, test deletion, eslint-disable)
 3. **Statistical confidence** — only commits improvements that exceed the noise floor
 4. **Circuit breakers** — stops on: time limit, cost limit, stagnation
-5. **Tool whitelist** — Claude only gets access to Read, Edit, Write, and safe Bash commands
+5. **Tool whitelist** — Claude gets Read, Edit, Write, Glob, Grep, and scoped Bash (npm/npx/node/git status/diff/log only)
+6. **Measurement timeout** — measure.sh calls timeout after 120s (configurable via MEASURE_TIMEOUT)

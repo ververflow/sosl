@@ -2,7 +2,9 @@
 # SOSL — Shared utilities
 # All JSON/math via python3 (no jq/bc dependency on Windows Git Bash)
 
-set -euo pipefail
+set -eo pipefail
+# Note: no -u (nounset) — this file is sourced into sosl.sh which needs
+# unset vars in trap handlers. Domain scripts use -euo independently.
 
 # ── Colors ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -82,12 +84,6 @@ PYEOF
 # ── Git helpers ─────────────────────────────────────────────────────────────
 git_has_changes() {
   [[ -n "$(git -C "$1" status --porcelain)" ]]
-}
-
-git_stage_changes() {
-  local target="$1"
-  git -C "$target" diff --name-only | xargs -r git -C "$target" add
-  git -C "$target" diff --cached --name-only | head -1 > /dev/null
 }
 
 git_revert_changes() {

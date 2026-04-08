@@ -11,14 +11,19 @@ measure_robust() {
   local values=()
 
   for ((i=1; i<=n_samples; i++)); do
-    local score exit_code
-    score=$(bash "$measure_script" "$target_dir" 2>/dev/null) || true
-    exit_code=${PIPESTATUS[0]:-$?}
-    # Score "0" from a failed measure is a measurement failure, not a real score
-    if [[ -z "$score" ]]; then
-      log_warn "Measurement $i/$n_samples failed (no output)"
+    local score
+    local exit_code=0
+    local timeout_sec="${MEASURE_TIMEOUT:-120}"
+    score=$(timeout "$timeout_sec" bash "$measure_script" "$target_dir" 2>/dev/null) || exit_code=$?
+    if [[ "$exit_code" -eq 124 ]]; then
+      log_warn "Measurement $i/$n_samples timed out after ${timeout_sec}s"
       continue
     fi
+    if [[ -z "$score" ]]; then
+      log_warn "Measurement $i/$n_samples failed (no output, exit $exit_code)"
+      continue
+    fi
+    # Score "0" from a non-zero exit = measurement failure, not a real score
     if [[ "$score" == "0" ]] && [[ "$exit_code" -ne 0 ]]; then
       log_warn "Measurement $i/$n_samples failed (exit $exit_code, score 0)"
       continue

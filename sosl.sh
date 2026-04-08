@@ -266,7 +266,7 @@ import json, sys
 try:
     d = json.loads(sys.stdin.read())
     print(d.get('total_cost_usd', d.get('cost_usd', 0)))
-except:
+except (json.JSONDecodeError, KeyError, TypeError):
     print(0)
 " 2>/dev/null || echo "0")
 
@@ -275,7 +275,7 @@ import json, sys
 try:
     d = json.loads(sys.stdin.read())
     print('true' if d.get('is_error', False) else 'false')
-except:
+except (json.JSONDecodeError, KeyError, TypeError):
     print('true')
 " 2>/dev/null || echo "true")
 
@@ -345,5 +345,8 @@ done
 
 # Clear checkpoint on clean completion
 clear_checkpoint "$TARGET_DIR" "$RUN_ID"
+
+# Generate summary
+write_summary "$TARGET_DIR" "$DOMAIN_NAME"
 
 log_ok "SOSL loop completed."

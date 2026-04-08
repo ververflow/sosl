@@ -93,7 +93,8 @@ The SOSL framework repo (`C:\Dev\sosl\`) is **never modified** by a run. It's a 
 - Then: merge the branch, cherry-pick specific commits, or delete it
 
 ## Conventions
-- All bash scripts use `set -eo pipefail` (not -u, some vars may be unset in trap handlers)
+- `sosl.sh` and `lib/utils.sh` use `set -eo pipefail` (no -u, trap handlers need unset vars)
+- Domain scripts and `sosl-parallel.sh` use `set -euo pipefail` (they run independently)
 - All math/JSON via `python3 -c` (no jq/bc — Windows Git Bash compatible)
 - Path conversion: use `to_py_path` from utils.sh for any path passed to Python (Git Bash → Windows)
 - Line endings: LF only (enforced by .gitattributes)

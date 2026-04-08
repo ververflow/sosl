@@ -27,7 +27,7 @@ sosl_dir = os.path.join(r'$py_dir', '.sosl')
 os.makedirs(sosl_dir, exist_ok=True)
 
 entry = {
-    'ts': datetime.datetime.now(datetime.UTC).isoformat().replace('+00:00', 'Z'),
+    'ts': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
     'iter': int($iteration),
     'domain': '$domain',
     'score_before': float($score_before) if '$score_before' else None,

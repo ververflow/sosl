@@ -20,7 +20,7 @@ data = {
     'baseline': float($baseline),
     'total_cost_usd': float($total_cost),
     'branch': '$branch',
-    'updated_at': datetime.datetime.now(datetime.UTC).isoformat().replace('+00:00', 'Z')
+    'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
 }
 
 checkpoint_path = os.path.join(sosl_dir, 'checkpoint.json')
