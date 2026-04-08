@@ -119,6 +119,59 @@ if broken:
     fi
   fi
 
+  # 6. Scope enforcement — changes must be within ALLOWED_PATHS
+  # Set ALLOWED_PATHS in domain config.sh (comma-separated globs relative to target)
+  if [[ -n "${ALLOWED_PATHS:-}" ]]; then
+    local changed_files
+    changed_files=$(git -C "$target_dir" diff --name-only 2>/dev/null)
+    local out_of_scope
+    out_of_scope=$(SOSL_CHANGED="$changed_files" SOSL_ALLOWED="$ALLOWED_PATHS" python3 -c "
+import os, fnmatch
+
+changed = os.environ.get('SOSL_CHANGED', '').strip().splitlines()
+allowed = [p.strip() for p in os.environ.get('SOSL_ALLOWED', '').split(',')]
+violations = []
+for path in changed:
+    path = path.strip()
+    if not path:
+        continue
+    matched = False
+    for pattern in allowed:
+        # Match glob pattern or path prefix
+        prefix = pattern.rstrip('*').rstrip('/')
+        if fnmatch.fnmatch(path, pattern) or path.startswith(prefix + '/'):
+            matched = True
+            break
+    if not matched:
+        violations.append(path)
+for v in violations[:10]:
+    print(v)
+" 2>/dev/null)
+    if [[ -n "$out_of_scope" ]]; then
+      echo "Files changed outside allowed scope ($ALLOWED_PATHS):"
+      echo "$out_of_scope"
+      return 1
+    fi
+  fi
+
+  # 7. Deletion limiet — prevent mass deletions (max net deletions configurable)
+  local max_deletions="${MAX_NET_DELETIONS:-100}"
+  local net_deletions
+  net_deletions=$(git -C "$target_dir" diff --shortstat 2>/dev/null | python3 -c "
+import sys, re
+line = sys.stdin.read().strip()
+ins = re.search(r'(\d+) insertion', line)
+dels = re.search(r'(\d+) deletion', line)
+insertions = int(ins.group(1)) if ins else 0
+deletions = int(dels.group(1)) if dels else 0
+print(max(0, deletions - insertions))
+" 2>/dev/null || echo 0)
+  net_deletions=$(echo "$net_deletions" | tr -d '[:space:]')
+  if [[ -n "$net_deletions" ]] && [[ "$net_deletions" -gt "$max_deletions" ]]; then
+    echo "Too many net deletions ($net_deletions lines > max $max_deletions)"
+    return 1
+  fi
+
   # ── Domain-specific guard (heavier: tsc, build, tests) ────────────────────
   if [[ -f "$guard_script" ]]; then
     local guard_output
