@@ -17,7 +17,10 @@ append_experiment() {
   local py_dir
   py_dir=$(to_py_path "$target_dir")
 
-  python3 -c "
+  local _improved
+  [[ "$improved" == "true" ]] && _improved="True" || _improved="False"
+
+  SOSL_SUMMARY="$summary" python3 -c "
 import json, datetime, os
 
 sosl_dir = os.path.join(r'$py_dir', '.sosl')
@@ -29,9 +32,9 @@ entry = {
     'domain': '$domain',
     'score_before': float($score_before) if '$score_before' else None,
     'score_after': float($score_after) if '$score_after' and '$score_after' != 'null' else None,
-    'improved': $([[ "$improved" == "true" ]] && echo "True" || echo "False"),
+    'improved': $_improved,
     'cost_usd': float($cost),
-    'summary': '''$summary'''
+    'summary': os.environ.get('SOSL_SUMMARY', '')
 }
 
 jsonl_path = os.path.join(sosl_dir, 'experiments.jsonl')

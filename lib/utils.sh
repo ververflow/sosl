@@ -62,13 +62,15 @@ float_calc() {
 # ── Health check ────────────────────────────────────────────────────────────
 # Usage: check_url "http://localhost:3000" → exit 0 if reachable
 check_url() {
-  python3 -c "
-import urllib.request, sys
+  python3 - "$1" <<'PYEOF' 2>/dev/null
+import urllib.request, urllib.error, sys
 try:
-    urllib.request.urlopen('$1', timeout=5)
+    urllib.request.urlopen(sys.argv[1], timeout=5)
+except urllib.error.HTTPError:
+    pass  # Server responded (e.g., 503 auth gate) = it's running
 except Exception:
     sys.exit(1)
-" 2>/dev/null
+PYEOF
 }
 
 # ── Git helpers ─────────────────────────────────────────────────────────────

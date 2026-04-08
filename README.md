@@ -180,7 +180,7 @@ See [docs/adding-domains.md](docs/adding-domains.md) for the full guide and [doc
 bash sosl.sh \
   --domain domains/performance \   # Required: which domain
   --target /path/to/repo \         # Required: repo to optimize
-  --config examples/config.conf \  # Optional: load from file
+  --config examples/template.conf \ # Optional: load from file
   --max-iterations 50 \            # Default: 50
   --max-hours 10 \                 # Default: 10
   --max-cost 25.00 \               # Default: 25.00 USD

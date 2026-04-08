@@ -27,6 +27,10 @@ You may modify TypeScript/TSX files in `frontend/src/` to fix lint issues:
 - Do NOT change the ESLint configuration
 - Do NOT install new packages
 
+## CRITICAL — Completeness Rule
+Every change must be self-contained. If you remove a variable, remove ALL references to it.
+If you move a function, update ALL callers. Incomplete changes will be automatically reverted.
+
 ## Strategy
 1. Run ESLint mentally to identify the most common error category
 2. Fix one category of errors per iteration (e.g., all unused imports, or all missing return types)

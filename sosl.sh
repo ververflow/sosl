@@ -1,7 +1,7 @@
 #!/bin/bash
 # SOSL — Self-Optimizing Software Loop
 # Autonomous software optimization via Claude Code
-# https://github.com/dfranklinau/sosl
+# https://github.com/ververflow/sosl
 #
 # Usage: bash sosl.sh [options]
 
@@ -47,7 +47,7 @@ Options:
   --max-hours <N>         Maximum wall-clock hours (default: 10)
   --max-cost <N>          Maximum total cost in USD (default: 25.00)
   --budget-per-iter <N>   Maximum cost per iteration in USD (default: 1.00)
-  --samples <N>           Measurements per evaluation (default: 3)
+  --samples <N>           Measurements per evaluation (default: 5)
   --model <model>         Claude model to use (default: claude-sonnet-4-5)
   --health-check <url>    URL to check before starting (e.g., http://localhost:3000)
   --resume                Resume from last checkpoint
@@ -337,7 +337,7 @@ except:
   save_checkpoint "$TARGET_DIR" "$RUN_ID" "$ITER" "$BASELINE" "$TOTAL_COST" "$BRANCH"
 
   ITER_DURATION=$(($(date +%s) - ITER_START))
-  log "Iteration $((ITER)) completed in ${ITER_DURATION}s"
+  log "Iteration $((ITER + 1)) completed in ${ITER_DURATION}s"
   echo ""
 
   ITER=$((ITER + 1))

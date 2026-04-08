@@ -12,12 +12,11 @@ FRONTEND_DIR="$TARGET_DIR/frontend"
 
 # ── 1. Clear tsc incremental cache only (NOT .next — that kills the dev server)
 if [[ -d "$FRONTEND_DIR" ]]; then
-  local py_frontend
-  py_frontend=$(python3 -c "import os; print(os.path.normpath('$FRONTEND_DIR'))" 2>/dev/null || echo "$FRONTEND_DIR")
+  PY_FRONTEND=$(python3 -c "import os; print(os.path.normpath('$FRONTEND_DIR'))" 2>/dev/null || echo "$FRONTEND_DIR")
   python3 -c "
 import os
 for f in ['tsconfig.tsbuildinfo', '.tsbuildinfo']:
-    p = os.path.join(r'$py_frontend', f)
+    p = os.path.join(r'$PY_FRONTEND', f)
     if os.path.exists(p): os.remove(p)
 " 2>/dev/null || true
 fi
