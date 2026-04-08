@@ -132,9 +132,12 @@ build_prompt() {
   directive="${directive//\{\{SCOPE_GUIDANCE\}\}/$scope_guidance}"
 
   # Inject audit details if available (written by measure.sh)
+  # Check both work dir and state dir (worktree setup splits these)
   local audit_details=""
   if [[ -f "$target_dir/.sosl/last-audit.txt" ]]; then
     audit_details=$(cat "$target_dir/.sosl/last-audit.txt")
+  elif [[ -n "${SOSL_STATE_DIR:-}" ]] && [[ -f "$SOSL_STATE_DIR/last-audit.txt" ]]; then
+    audit_details=$(cat "$SOSL_STATE_DIR/last-audit.txt")
   fi
 
   # Append working directory instruction

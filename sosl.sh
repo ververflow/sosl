@@ -127,10 +127,16 @@ TOTAL_COST=0.00
 IMPROVEMENTS=0
 STAGNATION=0
 STAGNATION_THRESHOLD=7
-LOG_FILE="$TARGET_DIR/.sosl/${RUN_ID}.log"
 
-# Ensure .sosl directory exists
-mkdir -p "$TARGET_DIR/.sosl"
+# .sosl/ lives in the ORIGINAL target dir (not the worktree)
+# Exported so measure.sh/guard.sh can write audit details there
+export SOSL_STATE_DIR="$TARGET_DIR/.sosl"
+LOG_FILE="$SOSL_STATE_DIR/${RUN_ID}.log"
+mkdir -p "$SOSL_STATE_DIR"
+
+# WORK_DIR is where Claude makes changes — a worktree, not the original
+WORKTREE_BASE="$TARGET_DIR/.sosl-worktrees"
+WORK_DIR="$WORKTREE_BASE/$DOMAIN_NAME"
 
 # ── Cleanup on exit ─────────────────────────────────────────────────────────
 cleanup() {
@@ -148,8 +154,14 @@ cleanup() {
   log "Final score:  ${BASELINE:-N/A}"
   log "Total cost:   \$${TOTAL_COST}"
   log "Branch:       $BRANCH"
-  log "Experiment log: $TARGET_DIR/.sosl/experiments.jsonl"
+  log "Worktree:     $WORK_DIR"
+  log "Experiment log: $SOSL_STATE_DIR/experiments.jsonl"
   log_bold "════════════════════"
+  echo ""
+  if [[ $IMPROVEMENTS -gt 0 ]]; then
+    log "Review: git -C $TARGET_DIR log --oneline $BRANCH"
+    log "Merge:  git -C $TARGET_DIR merge $BRANCH && git -C $TARGET_DIR worktree remove $WORK_DIR"
+  fi
 }
 trap cleanup EXIT
 
@@ -165,8 +177,11 @@ if [[ "$RESUME" == true ]]; then
     BRANCH=$(echo "$checkpoint" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['branch'])")
     ITER=$((ITER + 1))
     log_ok "Resuming run from iteration $ITER (baseline: $BASELINE, cost: \$$TOTAL_COST)"
-    cd "$TARGET_DIR"
-    git checkout "$BRANCH" 2>/dev/null
+    # Worktree should still exist from the interrupted run
+    if [[ ! -d "$WORK_DIR" ]]; then
+      log_err "Worktree not found: $WORK_DIR (cannot resume)"
+      exit 1
+    fi
   else
     log_warn "No checkpoint found for domain '$DOMAIN_NAME'. Starting fresh."
     RESUME=false
@@ -174,13 +189,37 @@ if [[ "$RESUME" == true ]]; then
 fi
 
 if [[ "$RESUME" == false ]]; then
-  # Create optimization branch
-  cd "$TARGET_DIR"
-  git checkout -b "$BRANCH" 2>/dev/null || {
-    log_err "Could not create branch: $BRANCH"
+  # Create worktree — isolated copy so you can keep working on main
+  mkdir -p "$WORKTREE_BASE"
+  if [[ -d "$WORK_DIR" ]]; then
+    git -C "$TARGET_DIR" worktree remove "$WORK_DIR" --force 2>/dev/null || true
+  fi
+  git -C "$TARGET_DIR" worktree add -b "$BRANCH" "$WORK_DIR" HEAD 2>/dev/null || {
+    log_err "Could not create worktree: $WORK_DIR"
     exit 1
   }
-  log_ok "Created branch: $BRANCH"
+  log_ok "Created worktree: $WORK_DIR (branch: $BRANCH)"
+  log "You can keep working on main in $TARGET_DIR"
+
+  # Symlink node_modules from original to worktree (worktrees don't share them)
+  for nm_dir in $(find "$TARGET_DIR" -maxdepth 3 -name "node_modules" -type d 2>/dev/null); do
+    _relative="${nm_dir#$TARGET_DIR/}"
+    _wt_parent="$WORK_DIR/$(dirname "$_relative")"
+    if [[ -d "$_wt_parent" ]] && [[ ! -e "$_wt_parent/node_modules" ]]; then
+      ln -s "$nm_dir" "$_wt_parent/node_modules" 2>/dev/null && \
+        log "Linked: $_relative"
+    fi
+  done
+  # Also link Python venv if present
+  for _venv_dir in "$TARGET_DIR"/.venv "$TARGET_DIR"/backend/.venv; do
+    if [[ -d "$_venv_dir" ]]; then
+      _relative="${_venv_dir#$TARGET_DIR/}"
+      _wt_target="$WORK_DIR/$_relative"
+      if [[ ! -e "$_wt_target" ]]; then
+        ln -s "$_venv_dir" "$_wt_target" 2>/dev/null
+      fi
+    fi
+  done
 
   # Health check
   if [[ -n "$HEALTH_CHECK_URL" ]]; then
@@ -194,7 +233,7 @@ if [[ "$RESUME" == false ]]; then
 
   # Baseline measurement
   log "Measuring baseline ($SAMPLES samples)..."
-  baseline_result=$(measure_robust "$MEASURE_SCRIPT" "$TARGET_DIR" "$SAMPLES")
+  baseline_result=$(measure_robust "$MEASURE_SCRIPT" "$WORK_DIR" "$SAMPLES")
   BASELINE=$(echo "$baseline_result" | awk '{print $1}')
   NOISE_FLOOR=$(echo "$baseline_result" | awk '{print $2}')
   log_ok "Baseline: ${BOLD}$BASELINE${NC} (noise floor: $NOISE_FLOOR)"
@@ -203,7 +242,7 @@ fi
 # If noise floor wasn't set (resume path), re-measure
 if [[ -z "${NOISE_FLOOR:-}" ]]; then
   log "Re-measuring noise floor..."
-  nf_result=$(measure_robust "$MEASURE_SCRIPT" "$TARGET_DIR" "$SAMPLES")
+  nf_result=$(measure_robust "$MEASURE_SCRIPT" "$WORK_DIR" "$SAMPLES")
   NOISE_FLOOR=$(echo "$nf_result" | awk '{print $2}')
 fi
 
@@ -251,7 +290,7 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
   recent=$(get_recent "$TARGET_DIR" 3 2>/dev/null || echo "No previous experiments.")
   scope_guidance=$(get_scope_guidance "$ITER" "$MAX_ITERATIONS")
 
-  prompt=$(build_prompt "$DIRECTIVE_FILE" "$BASELINE" "$((ITER + 1))" "$MAX_ITERATIONS" "$recent" "$scope_guidance" "$TARGET_DIR")
+  prompt=$(build_prompt "$DIRECTIVE_FILE" "$BASELINE" "$((ITER + 1))" "$MAX_ITERATIONS" "$recent" "$scope_guidance" "$WORK_DIR")
 
   if [[ "$DRY_RUN" == true ]]; then
     log "DRY RUN — Prompt for iteration $((ITER + 1)):"
@@ -265,7 +304,7 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
   # ── Call Claude ───────────────────────────────────────────────────────────
   log "Calling Claude ($MODEL, budget: \$$BUDGET_PER_ITER)..."
 
-  claude_output=$(cd "$TARGET_DIR" && claude -p "$prompt" \
+  claude_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
     --output-format json \
     --max-turns 15 \
     --allowedTools "Read Edit Write Glob Grep Bash(npm:*) Bash(npx:*) Bash(node:*) Bash(git:status) Bash(git:diff) Bash(git:log)" \
@@ -296,7 +335,7 @@ except (json.JSONDecodeError, KeyError, TypeError):
 
   if [[ "$is_error" == "true" ]]; then
     log_err "Claude returned an error. Skipping iteration."
-    git_revert_changes "$TARGET_DIR"
+    git_revert_changes "$WORK_DIR"
     append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Claude error"
     STAGNATION=$((STAGNATION + 1))
     ITER=$((ITER + 1))
@@ -304,7 +343,7 @@ except (json.JSONDecodeError, KeyError, TypeError):
   fi
 
   # ── Check for changes ────────────────────────────────────────────────────
-  if ! git_has_changes "$TARGET_DIR"; then
+  if ! git_has_changes "$WORK_DIR"; then
     log_warn "No code changes made. Skipping."
     append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "$BASELINE" false "$iter_cost" "No changes"
     STAGNATION=$((STAGNATION + 1))
@@ -314,9 +353,9 @@ except (json.JSONDecodeError, KeyError, TypeError):
 
   # ── Run guards ────────────────────────────────────────────────────────────
   log "Running guards..."
-  guard_result=$(run_guards "$GUARD_SCRIPT" "$TARGET_DIR" 2>&1) || {
+  guard_result=$(run_guards "$GUARD_SCRIPT" "$WORK_DIR" 2>&1) || {
     log_err "Guard failed: $guard_result"
-    git_revert_changes "$TARGET_DIR"
+    git_revert_changes "$WORK_DIR"
     safe_result=$(sanitize_for_log "$guard_result")
     append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Guard fail: $safe_result"
     STAGNATION=$((STAGNATION + 1))
@@ -327,21 +366,21 @@ except (json.JSONDecodeError, KeyError, TypeError):
 
   # ── Measure ───────────────────────────────────────────────────────────────
   log "Measuring ($SAMPLES samples)..."
-  measure_result=$(measure_robust "$MEASURE_SCRIPT" "$TARGET_DIR" "$SAMPLES")
+  measure_result=$(measure_robust "$MEASURE_SCRIPT" "$WORK_DIR" "$SAMPLES")
   new_score=$(echo "$measure_result" | awk '{print $1}')
   log "Score: $BASELINE → $new_score"
 
   # ── Compare ───────────────────────────────────────────────────────────────
   if is_significant "$BASELINE" "$new_score" "$NOISE_FLOOR"; then
     log_ok "Improvement detected! Committing."
-    git_commit_sosl "$TARGET_DIR" "$DOMAIN_NAME" "$BASELINE" "$new_score"
+    git_commit_sosl "$WORK_DIR" "$DOMAIN_NAME" "$BASELINE" "$new_score"
     append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "$new_score" true "$iter_cost" "Improved"
     BASELINE="$new_score"
     IMPROVEMENTS=$((IMPROVEMENTS + 1))
     STAGNATION=0
   else
     log_warn "No significant improvement ($new_score vs baseline $BASELINE, noise $NOISE_FLOOR). Reverting."
-    git_revert_changes "$TARGET_DIR"
+    git_revert_changes "$WORK_DIR"
     append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "$new_score" false "$iter_cost" "Below noise floor"
     STAGNATION=$((STAGNATION + 1))
   fi

@@ -50,7 +50,7 @@ try:
             failures.append((ref.get('weight', 0), title, display, audit_score))
     failures.sort(key=lambda x: -x[0])
 
-    sosl_dir = os.path.join(target_dir, '.sosl')
+    sosl_dir = os.environ.get('SOSL_STATE_DIR') or os.path.join(target_dir, '.sosl')
     os.makedirs(sosl_dir, exist_ok=True)
     with open(os.path.join(sosl_dir, 'last-audit.txt'), 'w', encoding='utf-8') as f:
         f.write('Top failing Lighthouse accessibility audits:\n')
