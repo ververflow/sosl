@@ -31,7 +31,7 @@ Required:
 All other flags are passed through to sosl.sh per instance.
 
 Example:
-  bash sosl-parallel.sh --target /c/Dev/houtcalc \\
+  bash sosl-parallel.sh --target /path/to/your-app \\
     --domains "performance,code-quality" \\
     --max-iterations 20 --max-hours 8
 EOF

@@ -26,7 +26,7 @@ domains/                 # Each domain = directive.md + measure.sh + guard.sh + 
   code-quality/          # ESLint error count (inverted)
   bundle-size/           # Next.js build size (inverted)
 examples/
-  houtcalc-perf.conf     # Working config for HoutCalc (Next.js + FastAPI SaaS)
+  nextjs-performance.conf # Example config for Next.js Lighthouse optimization
 docs/
   CHANGELOG.md           # Evolution: braindump → v1 → v2 → v3 → implementation
   architecture.md        # 5-level structure (nano → micro → meso → macro → system)
@@ -87,7 +87,7 @@ your-project/                        ← the repo being optimized
     └── ...
 ```
 
-The SOSL framework repo (`C:\Dev\sosl\`) is **never modified** by a run. It's a tool you point at projects.
+The SOSL framework repo is **never modified** by a run. It's a tool you point at projects.
 
 **After a run, you review:**
 - `git log sosl/<domain>/*` — what SOSL committed
@@ -108,7 +108,7 @@ The SOSL framework repo (`C:\Dev\sosl\`) is **never modified** by a run. It's a 
 bash sosl.sh --help                                                          # Show usage
 bash sosl.sh --domain domains/performance --target /path/to/repo --dry-run   # Test without Claude
 bash sosl.sh --domain domains/performance --target /path/to/repo             # Run optimization
-bash sosl.sh --config examples/houtcalc-perf.conf                            # Run via config file
+bash sosl.sh --config examples/nextjs-performance.conf                       # Run via config file
 bash sosl-parallel.sh --target /path/to/repo --domains "performance,code-quality"  # Parallel
 ```
 

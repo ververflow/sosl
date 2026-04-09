@@ -154,7 +154,7 @@ for v in violations[:10]:
     fi
   fi
 
-  # 7. Deletion limiet — prevent mass deletions (max net deletions configurable)
+  # 7. Deletion limit — prevent mass deletions (max net deletions configurable)
   local max_deletions="${MAX_NET_DELETIONS:-100}"
   local net_deletions
   net_deletions=$(git -C "$target_dir" diff --shortstat 2>/dev/null | python3 -c "
