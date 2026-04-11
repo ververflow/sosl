@@ -95,13 +95,17 @@ mkdir -p .sosl/domains/my-metric
 set -euo pipefail
 cd "${1:-.}"
 
-# Example: test pass rate
-result=$(python -m pytest --tb=no -q 2>&1 | tail -1)
-passed=$(echo "$result" | grep -oP '\d+(?= passed)' || echo 0)
-failed=$(echo "$result" | grep -oP '\d+(?= failed)' || echo 0)
-total=$((passed + failed))
-[[ $total -eq 0 ]] && echo 0 && exit 0
-echo "scale=1; $passed * 100 / $total" | bc
+# Example: test pass rate (uses python3 for portability — works on Windows Git Bash)
+python3 -c "
+import subprocess, re
+result = subprocess.run(['python', '-m', 'pytest', '--tb=no', '-q'],
+                        capture_output=True, text=True)
+last_line = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ''
+passed = int(m.group(1)) if (m := re.search(r'(\d+) passed', last_line)) else 0
+failed = int(m.group(1)) if (m := re.search(r'(\d+) failed', last_line)) else 0
+total = passed + failed
+print(round(passed * 100 / total, 1) if total > 0 else 0)
+"
 ```
 
 **guard.sh** -- must exit 0 if safe:
@@ -128,6 +132,9 @@ Current score: **{{CURRENT_SCORE}}**. Target: as high as possible.
 - {{SCOPE_GUIDANCE}}
 
 {{STRATEGY_MODE}}
+
+## Secondary Metrics
+{{SECONDARY_METRICS}}
 
 ## Session History
 {{SESSION_CONTEXT}}

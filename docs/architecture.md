@@ -1,6 +1,6 @@
 # SOSL Architecture
 
-## The 5-Level Structure
+## The Multi-Level Structure
 
 ### Level 0: Atomic Change (nano)
 One git commit. One or a few file modifications. Covered by contra-metric guards.
@@ -136,7 +136,7 @@ If directive.md + measure.sh + guard.sh exist there, that version takes preceden
 ### directive.md
 - Markdown file with instructions for Claude
 - Must define: objective, allowed scope, forbidden scope, strategy
-- Dynamic placeholders replaced at runtime: `{{CURRENT_SCORE}}`, `{{ITERATION}}`, `{{MAX_ITERATIONS}}`, `{{RECENT_RESULTS}}`, `{{SCOPE_GUIDANCE}}`, `{{SESSION_CONTEXT}}`, `{{STRATEGY_MODE}}`
+- Dynamic placeholders replaced at runtime: `{{CURRENT_SCORE}}`, `{{ITERATION}}`, `{{MAX_ITERATIONS}}`, `{{RECENT_RESULTS}}`, `{{SCOPE_GUIDANCE}}`, `{{SESSION_CONTEXT}}`, `{{STRATEGY_MODE}}`, `{{SECONDARY_METRICS}}`
 
 ## State Management
 
@@ -144,8 +144,12 @@ SOSL is **stateless per iteration**: each Claude call is a fresh subprocess with
 
 - `.sosl/experiments.jsonl` — append-only experiment log with mode, strategy, and secondary metric fields (survives crashes)
 - `.sosl/session.md` — living session document: strategies tried, dead ends, key wins (updated per iteration)
+- `.sosl/tree.json` — tree search state: nodes, scores, branches, frontier (`--search tree` only)
 - `.sosl/checkpoint.json` — current iteration + baseline (enables resume)
-- `.sosl/SUMMARY.md` — human-readable summary (generated after completion, both solo and parallel runs)
+- `.sosl/SUMMARY.md` — human-readable summary (generated after completion)
+- `.sosl/JUDGE_REPORT.md` — Judge Agent verdict + detailed review (if improvements detected)
+- `.sosl/FINALIZED.md` — branch finalization report with groups and merge commands (`--finalize` only)
+- `.sosl/finalization.json` — machine-readable finalization results (`--finalize` only)
 - `.sosl/last-audit.txt` — top failing Lighthouse audits (injected into Claude's prompt)
 - Git history — the commits themselves are the primary record
 
@@ -155,5 +159,5 @@ SOSL is **stateless per iteration**: each Claude call is a fresh subprocess with
 2. **Guard rails** — domain-specific + universal (file count, test deletion, eslint-disable)
 3. **Statistical confidence** — only commits improvements that exceed the noise floor
 4. **Circuit breakers** — stops on: time limit, cost limit, stagnation
-5. **Tool whitelist** — Claude gets Read, Edit, Write, Glob, Grep, and scoped Bash (npm/npx/node/git status/diff/log only)
+5. **Tool whitelist** — Claude gets Read, Edit, Write, Glob, Grep, and scoped Bash (`npm run *`, `npx:*`, `git status/diff/log` only)
 6. **Measurement timeout** — measure.sh calls timeout after 120s (configurable via MEASURE_TIMEOUT)

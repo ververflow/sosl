@@ -1,4 +1,4 @@
-# SOSL -- Self-Optimizing System Loop
+# SOSL — Self-Optimizing System Loop
 
 > Point an AI agent at a metric. Go to sleep. Wake up with improvements.
 

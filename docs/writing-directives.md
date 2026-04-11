@@ -53,9 +53,11 @@ These are replaced at runtime by sosl.sh:
 | `{{MAX_ITERATIONS}}` | Total iterations configured |
 | `{{RECENT_RESULTS}}` | Last 3 experiment results from JSONL |
 | `{{SCOPE_GUIDANCE}}` | Temperature phase (EXPLORATION/REFINEMENT/POLISHING) |
-| `{{SESSION_CONTEXT}}` | Living session: recent strategies, dead ends, key wins |
 | `{{STRATEGY_MODE}}` | Mode-specific guidance: DRAFT / DEBUG / IMPROVE |
 | `{{SECONDARY_METRICS}}` | Cross-domain tradeoff monitor results (if configured) |
+| `{{SESSION_CONTEXT}}` | Living session: recent strategies, dead ends, key wins |
+
+Note: audit data from `last-audit.txt` (written by Lighthouse domains) is also auto-injected into the prompt as "Measurement Data" — this is not a placeholder but automatic behavior.
 
 ## Tips
 

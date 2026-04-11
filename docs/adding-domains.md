@@ -110,13 +110,18 @@ See [writing-directives.md](writing-directives.md) for the full guide. Minimum t
 Add a config.sh for domain-specific settings:
 
 ```bash
-# config.sh
+# config.sh — all keys are optional
 MIN_NOISE_FLOOR=0.5           # Minimum threshold for significance (Lighthouse: 3.0)
 ALLOWED_PATHS="src/*"          # Restrict Claude to these paths
 SECONDARY_DOMAINS="lint-score" # Monitor tradeoff metrics
 MAX_NET_DELETIONS=100          # Max net lines deleted per iteration
 MEASURE_TIMEOUT=120            # Seconds before measure.sh times out
+MAX_CHILDREN=3                 # Tree search: max attempts per node
+MAX_DEPTH=5                    # Tree search: max tree depth
+TARGET_URL="http://localhost:3000"  # For Lighthouse-based domains
 ```
+
+**Warning**: project-local domain overrides require ALL three files (directive.md, measure.sh, guard.sh) to exist in `.sosl/domains/<name>/`. If any file is missing, SOSL silently falls back to the built-in domain. Partial overrides don't work.
 
 ## Step 6: Test it
 
