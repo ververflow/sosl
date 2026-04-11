@@ -1,5 +1,5 @@
 #!/bin/bash
-# SOSL — Self-Optimizing Software Loop
+# SOSL — Self-Optimizing System Loop
 # Autonomous software optimization via Claude Code
 # https://github.com/ververflow/sosl
 #
@@ -44,7 +44,7 @@ FINALIZE=false
 # ── Parse arguments ─────────────────────────────────────────────────────────
 print_usage() {
   cat <<EOF
-${BOLD}SOSL — Self-Optimizing Software Loop${NC}
+${BOLD}SOSL — Self-Optimizing System Loop${NC}
 
 Usage: bash sosl.sh [options]
 

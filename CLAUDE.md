@@ -1,4 +1,4 @@
-# SOSL — Self-Optimizing Software Loop
+# SOSL — Self-Optimizing System Loop
 
 ## What this is
 Framework for autonomous software optimization using Claude Code. Runs overnight, measures a metric, commits improvements, reverts regressions. Open-source, meant to be forked and adapted.

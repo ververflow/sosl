@@ -198,7 +198,7 @@ Deep analysis of reference implementations revealed:
 
 ### v1 — Core Concept (April 8, 2026)
 Translated Karpathy's autoresearch to software applications:
-- Named the framework: **SOSL (Self-Optimizing Software Loop)**
+- Named the framework: **SOSL (Self-Optimizing System Loop)**
 - Defined the metrics matrix per domain (performance, UI/UX, onboarding, code quality, bugs)
 - Designed loop control: hard limits, circuit breakers, dual-condition exit gates
 - Proposed parallel multi-domain architecture with hub-and-spoke orchestration
