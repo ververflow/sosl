@@ -55,6 +55,7 @@ These are replaced at runtime by sosl.sh:
 | `{{SCOPE_GUIDANCE}}` | Temperature phase (EXPLORATION/REFINEMENT/POLISHING) |
 | `{{SESSION_CONTEXT}}` | Living session: recent strategies, dead ends, key wins |
 | `{{STRATEGY_MODE}}` | Mode-specific guidance: DRAFT / DEBUG / IMPROVE |
+| `{{SECONDARY_METRICS}}` | Cross-domain tradeoff monitor results (if configured) |
 
 ## Tips
 

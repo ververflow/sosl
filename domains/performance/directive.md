@@ -10,6 +10,9 @@ Current score: **{{CURRENT_SCORE}}** / 100. Target: as high as possible.
 
 {{STRATEGY_MODE}}
 
+## Secondary Metrics (tradeoff monitors -- do not optimize these, but avoid degrading them)
+{{SECONDARY_METRICS}}
+
 ## Session History
 {{SESSION_CONTEXT}}
 

@@ -129,7 +129,7 @@ Review       → Morning: 3-4 branches of improvements ready for merge
 
 SOSL is **stateless per iteration**: each Claude call is a fresh subprocess with no session memory. All state lives on disk:
 
-- `.sosl/experiments.jsonl` — append-only experiment log with mode + strategy fields (survives crashes)
+- `.sosl/experiments.jsonl` — append-only experiment log with mode, strategy, and secondary metric fields (survives crashes)
 - `.sosl/session.md` — living session document: strategies tried, dead ends, key wins (updated per iteration)
 - `.sosl/checkpoint.json` — current iteration + baseline (enables resume)
 - `.sosl/SUMMARY.md` — human-readable summary (generated after completion, both solo and parallel runs)

@@ -24,6 +24,7 @@ lib/
   strategy.sh            # Mode detection: DRAFT / DEBUG / IMPROVE per iteration
   tree.sh                # Tree search: greedy best-first exploration over solution space
   judge.sh               # Judge Agent: fresh-context post-loop review (APPROVE/REJECT)
+  secondary.sh           # Secondary metrics: cross-domain tradeoff monitoring
 domains/                 # Each domain = directive.md + measure.sh + guard.sh + optional config.sh
   performance/           # Lighthouse Performance score
   accessibility/         # Lighthouse Accessibility score
@@ -57,6 +58,8 @@ These are the interfaces that make SOSL work. Get them wrong and the loop breaks
 **tree.json** (auto-generated, `--search tree` only): search tree state in `.sosl/tree.json`. Flat node map with parent/child relationships, scores, branches. Each successful commit = new node. Failed attempts stored separately. Greedy best-first selection expands highest-scoring frontier node.
 
 **Judge Agent** (`lib/judge.sh`): runs after the loop completes if there are improvements. Fresh-context Claude reviews all commits, experiment log, session history, and git diff. Produces `.sosl/JUDGE_REPORT.md` with APPROVE/REQUEST CHANGES/REJECT verdict. Read-only tools only. Skip with `--no-judge`.
+
+**secondary metrics** (`lib/secondary.sh`): cross-domain tradeoff monitoring. Set `SECONDARY_DOMAINS="bundle-size,code-quality"` in domain config.sh. After each committed improvement, runs each secondary domain's measure.sh once (1 sample). Warns if secondary metrics degrade. Informational only — does not block commits. Injected into Claude's prompt via `{{SECONDARY_METRICS}}`.
 
 **config.sh**: optional per-domain config. Currently supports `MIN_NOISE_FLOOR` (default: 0.5, Lighthouse domains use 3.0).
 

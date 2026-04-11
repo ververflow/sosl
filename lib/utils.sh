@@ -61,6 +61,7 @@ ALLOWED_KEYS = {
     # sosl.sh config keys (string values)
     'TARGET_DIR', 'DOMAIN_DIR', 'CONFIG_FILE', 'MODEL',
     'HEALTH_CHECK_URL', 'TARGET_URL', 'URLS', 'SEARCH_MODE', 'NO_JUDGE',
+    'SECONDARY_DOMAINS',
     # sosl.sh config keys (numeric values)
     'MAX_ITERATIONS', 'MAX_HOURS', 'MAX_COST_USD', 'BUDGET_PER_ITER', 'SAMPLES',
     # domain config keys
@@ -239,6 +240,7 @@ build_prompt() {
   local target_dir="$7"
   local session_context="${8:-}"
   local strategy_guidance="${9:-}"
+  local secondary_context="${10:-}"
 
   local directive
   directive=$(cat "$directive_file")
@@ -251,6 +253,7 @@ build_prompt() {
   directive="${directive//\{\{SCOPE_GUIDANCE\}\}/$scope_guidance}"
   directive="${directive//\{\{SESSION_CONTEXT\}\}/$session_context}"
   directive="${directive//\{\{STRATEGY_MODE\}\}/$strategy_guidance}"
+  directive="${directive//\{\{SECONDARY_METRICS\}\}/$secondary_context}"
 
   # Inject audit details if available (written by measure.sh)
   # Check both work dir and state dir (worktree setup splits these)

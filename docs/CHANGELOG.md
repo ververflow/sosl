@@ -13,6 +13,26 @@
 
 ---
 
+## v0.6.0 — Secondary Metrics (April 11, 2026)
+
+SOSL now monitors tradeoffs across domains. When optimizing performance, it also checks bundle size and code quality — warning if the primary metric improves at the cost of others.
+
+### What changed
+- **Secondary metrics** (`lib/secondary.sh`): cross-domain tradeoff monitoring. Reuses existing domain measure.sh scripts (zero new measurement code).
+- **`SECONDARY_DOMAINS` config**: set in domain config.sh (e.g., `SECONDARY_DOMAINS="bundle-size,code-quality"`). Runs 1 sample per secondary domain after each committed improvement.
+- **`{{SECONDARY_METRICS}}` placeholder**: injected into Claude's prompt so it can factor tradeoffs into its strategy.
+- **JSONL tracking**: secondary scores stored in experiment log for post-hoc analysis.
+- **Informational only**: secondary metrics warn but never block commits. The primary metric still drives optimization.
+
+### Why this matters
+SOSL's #1 production problem is Goodhart's Law. Guards catch broken code, but not legitimate tradeoffs (performance improves because bundle grew, or code quality drops because types were loosened). Secondary metrics make these tradeoffs visible — both to Claude (via prompt) and to humans (via experiment log and warnings).
+
+### Sources leveraged
+- **AIDE/Weco** (multi-metric tracking): primary + secondary metrics alongside
+- **pi-autoresearch** (secondary metrics in experiment log): tradeoff monitoring per iteration
+
+---
+
 ## v0.5.0 — Judge Agent (April 11, 2026)
 
 SOSL now includes a fresh-context code reviewer that runs after the optimization loop. The Judge Agent reviews all commits, experiment history, and code diff, then produces an APPROVE / REQUEST CHANGES / REJECT verdict.

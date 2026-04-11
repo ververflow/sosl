@@ -19,6 +19,7 @@ source "$SCRIPT_DIR/lib/session.sh"
 source "$SCRIPT_DIR/lib/strategy.sh"
 source "$SCRIPT_DIR/lib/tree.sh"
 source "$SCRIPT_DIR/lib/judge.sh"
+source "$SCRIPT_DIR/lib/secondary.sh"
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 DOMAIN_DIR=""
@@ -140,6 +141,7 @@ if [[ -f "$DOMAIN_DIR/config.sh" ]]; then
   _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "ALLOWED_PATHS"); [[ -n "$_v" ]] && ALLOWED_PATHS="$_v"
   _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "MAX_NET_DELETIONS"); [[ -n "$_v" ]] && MAX_NET_DELETIONS="$_v"
   _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "MEASURE_TIMEOUT"); [[ -n "$_v" ]] && MEASURE_TIMEOUT="$_v"
+  _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "SECONDARY_DOMAINS"); [[ -n "$_v" ]] && SECONDARY_DOMAINS="$_v"
 fi
 
 [[ ! -f "$DIRECTIVE_FILE" ]] && { log_err "Missing: $DIRECTIVE_FILE"; exit 1; }
@@ -269,6 +271,16 @@ if [[ "$RESUME" == false ]]; then
 fi
 INITIAL_BASELINE="$BASELINE"
 
+# Measure secondary metrics baseline (1 sample each, informational only)
+SECONDARY_BEFORE=""
+SECONDARY_CONTEXT=""
+if [[ -n "${SECONDARY_DOMAINS:-}" ]]; then
+  log "Measuring secondary baselines ($SECONDARY_DOMAINS)..."
+  SECONDARY_BEFORE=$(measure_secondary "$SCRIPT_DIR" "$SECONDARY_DOMAINS" "$WORK_DIR")
+  SECONDARY_CONTEXT=$(format_secondary_baseline "$SECONDARY_BEFORE")
+  log_ok "Secondary baselines: $SECONDARY_BEFORE"
+fi
+
 # If noise floor wasn't set (resume path), re-measure
 if [[ -z "${NOISE_FLOOR:-}" ]]; then
   log "Re-measuring noise floor..."
@@ -370,7 +382,7 @@ while [[ $GLOBAL_ITER -lt $MAX_ITERATIONS ]]; do
   scope_guidance=$(get_scope_guidance "$GLOBAL_ITER" "$MAX_ITERATIONS")
   session_ctx=$(tree_session_get "$TARGET_DIR" "$node_id" 2>/dev/null || echo "")
 
-  prompt=$(build_prompt "$DIRECTIVE_FILE" "$BASELINE" "$((GLOBAL_ITER + 1))" "$MAX_ITERATIONS" "$recent" "$scope_guidance" "$WORK_DIR" "$session_ctx" "$mode_guidance")
+  prompt=$(build_prompt "$DIRECTIVE_FILE" "$BASELINE" "$((GLOBAL_ITER + 1))" "$MAX_ITERATIONS" "$recent" "$scope_guidance" "$WORK_DIR" "$session_ctx" "$mode_guidance" "${SECONDARY_CONTEXT:-}")
 
   if [[ "$DRY_RUN" == true ]]; then
     log "DRY RUN — Prompt for iteration $((GLOBAL_ITER + 1)) (node $node_id):"
@@ -480,6 +492,19 @@ except Exception:
     append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "$new_score" true "$iter_cost" "Improved" "$ITER_MODE" "$strategy_summary"
     session_update "$TARGET_DIR" "$((GLOBAL_ITER + 1))" "$ITER_MODE" "committed" "$BASELINE" "$new_score" "${strategy_summary:-Improvement}" ""
     IMPROVEMENTS=$((IMPROVEMENTS + 1))
+
+    # Secondary metrics check (after commit, informational only)
+    if [[ -n "${SECONDARY_DOMAINS:-}" ]]; then
+      local sec_after
+      sec_after=$(measure_secondary "$SCRIPT_DIR" "$SECONDARY_DOMAINS" "$WORK_DIR")
+      local sec_comparison
+      sec_comparison=$(compare_secondary "$SECONDARY_BEFORE" "$sec_after")
+      if has_warnings "$sec_comparison"; then
+        log_warn "Tradeoff: $(format_secondary "$sec_comparison")"
+      fi
+      SECONDARY_CONTEXT=$(format_secondary "$sec_comparison")
+      export SOSL_SECONDARY="$sec_comparison"
+    fi
   else
     log_warn "No significant improvement ($new_score vs $BASELINE). Recording failure."
     git_revert_changes "$WORK_DIR"
@@ -558,7 +583,7 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
   scope_guidance=$(get_scope_guidance "$ITER" "$MAX_ITERATIONS")
   session_ctx=$(session_get "$TARGET_DIR" 2>/dev/null || echo "")
 
-  prompt=$(build_prompt "$DIRECTIVE_FILE" "$BASELINE" "$((ITER + 1))" "$MAX_ITERATIONS" "$recent" "$scope_guidance" "$WORK_DIR" "$session_ctx" "$mode_guidance")
+  prompt=$(build_prompt "$DIRECTIVE_FILE" "$BASELINE" "$((ITER + 1))" "$MAX_ITERATIONS" "$recent" "$scope_guidance" "$WORK_DIR" "$session_ctx" "$mode_guidance" "${SECONDARY_CONTEXT:-}")
 
   if [[ "$DRY_RUN" == true ]]; then
     log "DRY RUN — Prompt for iteration $((ITER + 1)):"
@@ -667,6 +692,17 @@ except Exception:
     BASELINE="$new_score"
     IMPROVEMENTS=$((IMPROVEMENTS + 1))
     STAGNATION=0
+
+    # Secondary metrics check (after commit, informational only)
+    if [[ -n "${SECONDARY_DOMAINS:-}" ]]; then
+      sec_after=$(measure_secondary "$SCRIPT_DIR" "$SECONDARY_DOMAINS" "$WORK_DIR")
+      sec_comparison=$(compare_secondary "$SECONDARY_BEFORE" "$sec_after")
+      if has_warnings "$sec_comparison"; then
+        log_warn "Tradeoff: $(format_secondary "$sec_comparison")"
+      fi
+      SECONDARY_CONTEXT=$(format_secondary "$sec_comparison")
+      export SOSL_SECONDARY="$sec_comparison"
+    fi
   else
     log_warn "No significant improvement ($new_score vs baseline $BASELINE, noise $NOISE_FLOOR). Reverting."
     git_revert_changes "$WORK_DIR"

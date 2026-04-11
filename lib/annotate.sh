@@ -40,6 +40,7 @@ sosl_dir = os.path.join(py_dir, '.sosl')
 os.makedirs(sosl_dir, exist_ok=True)
 
 node_id = os.environ.get('SOSL_NODE_ID', '')
+secondary_json = os.environ.get('SOSL_SECONDARY', '')
 
 entry = {
     'ts': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
@@ -55,6 +56,11 @@ entry = {
 }
 if node_id:
     entry['node_id'] = node_id
+if secondary_json:
+    try:
+        entry['secondary'] = json.loads(secondary_json)
+    except (json.JSONDecodeError, TypeError):
+        pass
 
 jsonl_path = os.path.join(sosl_dir, 'experiments.jsonl')
 with open(jsonl_path, 'a', encoding='utf-8') as f:

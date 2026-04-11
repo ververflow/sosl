@@ -3,3 +3,5 @@
 MIN_NOISE_FLOOR=3.0
 # Only frontend files may be modified for performance optimization
 ALLOWED_PATHS="frontend/src/*,frontend/next.config.*"
+# Secondary metrics: monitor bundle size and code quality while optimizing performance
+SECONDARY_DOMAINS="bundle-size,code-quality"
