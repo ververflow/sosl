@@ -13,6 +13,24 @@
 
 ---
 
+## v0.8.0 — Branch Finalization (April 11, 2026)
+
+After a SOSL run, commits that touch overlapping files are grouped into independent changesets — each can be merged or rejected separately.
+
+### What changed
+- **`lib/finalize.sh`**: union-find algorithm groups commits by shared files. Creates `sosl/.../final-N` branches from main with cherry-picked commits.
+- **`--finalize` flag**: opt-in (skipped when only 1 commit). Runs after summary, before Judge.
+- **`.sosl/FINALIZED.md`**: human-readable report with groups, files, merge commands.
+- **`.sosl/finalization.json`**: machine-readable for tooling.
+
+### Why this matters
+Tree search can produce 10+ commits across multiple paths. Cherry-picking individual commits risks conflicts when they touch shared files. Finalization groups them so each group is independently mergeable — review and merge what you want, reject what you don't.
+
+### Source leveraged
+- **pi-autoresearch** (`autoresearch-finalize`): independent commit grouping from merge-base
+
+---
+
 ## v0.7.0 — Project Scalability (April 11, 2026)
 
 SOSL is no longer locked to Next.js/TypeScript. Two changes unlock any project:

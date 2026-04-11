@@ -30,6 +30,7 @@ lib/
   tree.sh                # Tree search: greedy best-first exploration over solution space
   judge.sh               # Judge Agent: fresh-context post-loop review (APPROVE/REJECT)
   secondary.sh           # Secondary metrics: cross-domain tradeoff monitoring
+  finalize.sh            # Branch finalization: group commits into cherry-pickable changesets
 domains/                 # Each domain = directive.md + measure.sh + guard.sh + optional config.sh
   performance/           # Lighthouse Performance score
   accessibility/         # Lighthouse Accessibility score

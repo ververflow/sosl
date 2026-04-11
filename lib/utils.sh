@@ -61,7 +61,7 @@ ALLOWED_KEYS = {
     # sosl.sh config keys (string values)
     'TARGET_DIR', 'DOMAIN_DIR', 'CONFIG_FILE', 'MODEL',
     'HEALTH_CHECK_URL', 'TARGET_URL', 'URLS', 'SEARCH_MODE', 'NO_JUDGE',
-    'SECONDARY_DOMAINS',
+    'SECONDARY_DOMAINS', 'FINALIZE',
     # sosl.sh config keys (numeric values)
     'MAX_ITERATIONS', 'MAX_HOURS', 'MAX_COST_USD', 'BUDGET_PER_ITER', 'SAMPLES',
     # domain config keys

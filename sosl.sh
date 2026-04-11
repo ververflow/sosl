@@ -20,6 +20,7 @@ source "$SCRIPT_DIR/lib/strategy.sh"
 source "$SCRIPT_DIR/lib/tree.sh"
 source "$SCRIPT_DIR/lib/judge.sh"
 source "$SCRIPT_DIR/lib/secondary.sh"
+source "$SCRIPT_DIR/lib/finalize.sh"
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 DOMAIN_DIR=""
@@ -38,6 +39,7 @@ SEARCH_MODE="linear"
 MAX_CHILDREN=3
 MAX_DEPTH=5
 NO_JUDGE=false
+FINALIZE=false
 
 # ── Parse arguments ─────────────────────────────────────────────────────────
 print_usage() {
@@ -63,6 +65,7 @@ Options:
   --max-children <N>      Tree search: max attempts per node (default: 3)
   --max-depth <N>         Tree search: max tree depth (default: 5)
   --no-judge              Skip the Judge Agent review after the loop
+  --finalize              Create independent cherry-pickable branches from commits
   --resume                Resume from last checkpoint
   --dry-run               Print prompts without calling Claude
   -h, --help              Show this help
@@ -85,6 +88,7 @@ while [[ $# -gt 0 ]]; do
     --max-children)   MAX_CHILDREN="$2"; _cli_children=1; shift 2 ;;
     --max-depth)      MAX_DEPTH="$2"; _cli_depth=1; shift 2 ;;
     --no-judge)       NO_JUDGE=true; shift ;;
+    --finalize)       FINALIZE=true; shift ;;
     --resume)         RESUME=true; shift ;;
     --dry-run)        DRY_RUN=true; shift ;;
     -h|--help)        print_usage; exit 0 ;;
@@ -740,6 +744,15 @@ clear_checkpoint "$TARGET_DIR" "$RUN_ID"
 
 # Generate summary
 write_summary "$TARGET_DIR" "$DOMAIN_NAME"
+
+# ── Branch finalization ─────────────────────────────────────────────────────
+if [[ "$FINALIZE" == "true" ]] && [[ "$DRY_RUN" != "true" ]] && [[ ${IMPROVEMENTS:-0} -gt 1 ]]; then
+  echo ""
+  log_bold "═══ Branch Finalization ═══"
+  finalize_branch "$TARGET_DIR" "$BRANCH" "$WORK_DIR"
+  log_bold "═══════════════════════════"
+  echo ""
+fi
 
 # ── Judge Agent review ─────────────────────────────────────────────────────
 if [[ "$NO_JUDGE" != "true" ]] && [[ "$DRY_RUN" != "true" ]] && [[ ${IMPROVEMENTS:-0} -gt 0 ]]; then
