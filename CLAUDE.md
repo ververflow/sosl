@@ -36,6 +36,7 @@ domains/                 # Each domain = directive.md + measure.sh + guard.sh + 
   accessibility/         # Lighthouse Accessibility score
   code-quality/          # ESLint error count (inverted)
   bundle-size/           # Next.js build size (inverted)
+  judge/                 # Judge Agent directive (post-loop review, no measure/guard)
 examples/
   nextjs-performance.conf # Example config for Next.js Lighthouse optimization
   domains/                 # Copy-and-use example domains for any stack
@@ -43,6 +44,7 @@ examples/
     lint-score/            # Generic linting (autodetects Node/Python/Rust/Go)
     build-speed/           # Build time optimization (any compiled project)
     broken-links/          # Documentation link quality
+    skill-quality/         # Claude Code skill structural quality
 docs/
   CHANGELOG.md           # Evolution: braindump → v1 → v2 → v3 → implementation
   architecture.md        # 5-level structure (nano → micro → meso → macro → system)
@@ -58,7 +60,7 @@ These are the interfaces that make SOSL work. Get them wrong and the loop breaks
 
 **guard.sh**: takes target dir as arg, exit 0 = safe to measure, exit 1 = revert changes (print reason to stdout). Guards run BEFORE measurement — a guard failure means the change never gets measured.
 
-**directive.md**: markdown prompt for Claude. Must contain: objective, allowed scope, forbidden scope, strategy. Uses `{{CURRENT_SCORE}}`, `{{ITERATION}}`, `{{MAX_ITERATIONS}}`, `{{RECENT_RESULTS}}`, `{{SCOPE_GUIDANCE}}`, `{{SESSION_CONTEXT}}`, `{{STRATEGY_MODE}}` placeholders.
+**directive.md**: markdown prompt for Claude. Must contain: objective, allowed scope, forbidden scope, strategy. Uses `{{CURRENT_SCORE}}`, `{{ITERATION}}`, `{{MAX_ITERATIONS}}`, `{{RECENT_RESULTS}}`, `{{SCOPE_GUIDANCE}}`, `{{SESSION_CONTEXT}}`, `{{STRATEGY_MODE}}`, `{{SECONDARY_METRICS}}` placeholders.
 
 **session.md** (auto-generated): living document in `.sosl/session.md` that tracks strategies tried, dead ends, and key wins across iterations. Injected into Claude's prompt via `{{SESSION_CONTEXT}}`. Prevents retrying failed approaches.
 

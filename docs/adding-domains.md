@@ -2,7 +2,21 @@
 
 SOSL domains are modular: 3 files define a complete optimization target.
 
-## Step 1: Create the domain directory
+## Option A: Project-Local Domain (recommended)
+
+Drop your domain in your project's `.sosl/domains/` directory. SOSL checks there first, no forking needed:
+
+```bash
+mkdir -p your-project/.sosl/domains/my-metric
+# Create measure.sh, guard.sh, directive.md there
+# Then:
+bash sosl.sh --domain domains/my-metric --target your-project
+# SOSL auto-discovers .sosl/domains/my-metric/ in the target
+```
+
+## Option B: Domain in SOSL Repo
+
+For reusable domains you want to share across projects:
 
 ```bash
 mkdir -p domains/your-domain
@@ -70,6 +84,14 @@ See [writing-directives.md](writing-directives.md) for the full guide. Minimum t
 - Iteration: {{ITERATION}} of {{MAX_ITERATIONS}}
 - {{SCOPE_GUIDANCE}}
 
+{{STRATEGY_MODE}}
+
+## Secondary Metrics
+{{SECONDARY_METRICS}}
+
+## Session History
+{{SESSION_CONTEXT}}
+
 ## Previous Experiments
 {{RECENT_RESULTS}}
 
@@ -83,7 +105,20 @@ See [writing-directives.md](writing-directives.md) for the full guide. Minimum t
 [How to approach optimization]
 ```
 
-## Step 5: Test it
+## Step 5: Optional config.sh
+
+Add a config.sh for domain-specific settings:
+
+```bash
+# config.sh
+MIN_NOISE_FLOOR=0.5           # Minimum threshold for significance (Lighthouse: 3.0)
+ALLOWED_PATHS="src/*"          # Restrict Claude to these paths
+SECONDARY_DOMAINS="lint-score" # Monitor tradeoff metrics
+MAX_NET_DELETIONS=100          # Max net lines deleted per iteration
+MEASURE_TIMEOUT=120            # Seconds before measure.sh times out
+```
+
+## Step 6: Test it
 
 ```bash
 # Test measure.sh standalone

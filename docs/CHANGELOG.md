@@ -1,13 +1,8 @@
 # CHANGELOG
 
-## Next: v0.6.0 — Scale & Polish
+## Next
 
-### Planned
-- [ ] Judge Agent: fresh-context Claude instance reviews SOSL's commits before marking as ready
-- [ ] Branch finalization: group commits into independent, reviewable changesets
-- [ ] Secondary metrics tracking (tradeoff monitoring alongside primary metric)
-- [ ] Project-local domain overrides: `your-project/.sosl/domains/performance/`
-- [ ] Generic guards that auto-detect stack (Next.js vs Vite vs Python etc.)
+### Ideas
 - [ ] Scheduler: cron or `claude --schedule` to run SOSL nightly on multiple projects
 - [ ] GitHub Actions workflow for cloud-based runs (no local machine needed overnight)
 

@@ -168,6 +168,7 @@ bash sosl.sh \
   --model claude-sonnet-4-5 \        # Claude model (default: claude-sonnet-4-5)
   --health-check http://localhost:3000 \
   --no-judge \                       # Skip post-loop Judge review
+  --finalize \                       # Create independent cherry-pickable branches
   --config examples/template.conf \  # Load from config file
   --resume \                         # Resume from checkpoint
   --dry-run                          # Print prompts, don't call Claude
