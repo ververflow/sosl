@@ -1,8 +1,8 @@
 # CHANGELOG
 
-## Next: v0.5.0 — Review & Scale
+## Next: v0.6.0 — Scale & Polish
 
-### Phase 4 (planned)
+### Planned
 - [ ] Judge Agent: fresh-context Claude instance reviews SOSL's commits before marking as ready
 - [ ] Branch finalization: group commits into independent, reviewable changesets
 - [ ] Secondary metrics tracking (tradeoff monitoring alongside primary metric)
@@ -10,6 +10,21 @@
 - [ ] Generic guards that auto-detect stack (Next.js vs Vite vs Python etc.)
 - [ ] Scheduler: cron or `claude --schedule` to run SOSL nightly on multiple projects
 - [ ] GitHub Actions workflow for cloud-based runs (no local machine needed overnight)
+
+---
+
+## v0.5.0 — Judge Agent (April 11, 2026)
+
+SOSL now includes a fresh-context code reviewer that runs after the optimization loop. The Judge Agent reviews all commits, experiment history, and code diff, then produces an APPROVE / REQUEST CHANGES / REJECT verdict.
+
+### What changed
+- **Judge Agent** (`lib/judge.sh`): post-loop review with fresh-context Claude. Read-only tools (Read, Glob, Grep, git commands). Produces `.sosl/JUDGE_REPORT.md`.
+- **Judge directive** (`domains/judge/directive.md`): review checklist covering score validity, scope compliance, guard patterns, completeness, session learning, and search quality.
+- **`--no-judge` flag**: skip the review when not needed (e.g., dry runs, quick tests).
+- **Non-blocking**: Judge verdict is logged but doesn't destroy the branch. Human makes the final call.
+
+### Why this matters
+Guards catch broken code, but not subtler issues: scope creep, Goodhart gaming that passes guards, incomplete refactors that don't break types, or commits that contradict each other. The Judge provides a second opinion from a fresh perspective — no context carryover from the optimization loop means no shared blind spots.
 
 ---
 

@@ -23,6 +23,7 @@ lib/
   session.sh             # Living session document: tracks strategies, dead ends, key wins
   strategy.sh            # Mode detection: DRAFT / DEBUG / IMPROVE per iteration
   tree.sh                # Tree search: greedy best-first exploration over solution space
+  judge.sh               # Judge Agent: fresh-context post-loop review (APPROVE/REJECT)
 domains/                 # Each domain = directive.md + measure.sh + guard.sh + optional config.sh
   performance/           # Lighthouse Performance score
   accessibility/         # Lighthouse Accessibility score
@@ -54,6 +55,8 @@ These are the interfaces that make SOSL work. Get them wrong and the loop breaks
 - **DRAFT**: stagnation or repeated failures — try a completely different approach
 
 **tree.json** (auto-generated, `--search tree` only): search tree state in `.sosl/tree.json`. Flat node map with parent/child relationships, scores, branches. Each successful commit = new node. Failed attempts stored separately. Greedy best-first selection expands highest-scoring frontier node.
+
+**Judge Agent** (`lib/judge.sh`): runs after the loop completes if there are improvements. Fresh-context Claude reviews all commits, experiment log, session history, and git diff. Produces `.sosl/JUDGE_REPORT.md` with APPROVE/REQUEST CHANGES/REJECT verdict. Read-only tools only. Skip with `--no-judge`.
 
 **config.sh**: optional per-domain config. Currently supports `MIN_NOISE_FLOOR` (default: 0.5, Lighthouse domains use 3.0).
 

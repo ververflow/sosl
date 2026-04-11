@@ -18,6 +18,7 @@ source "$SCRIPT_DIR/lib/temperature.sh"
 source "$SCRIPT_DIR/lib/session.sh"
 source "$SCRIPT_DIR/lib/strategy.sh"
 source "$SCRIPT_DIR/lib/tree.sh"
+source "$SCRIPT_DIR/lib/judge.sh"
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 DOMAIN_DIR=""
@@ -35,6 +36,7 @@ CONFIG_FILE=""
 SEARCH_MODE="linear"
 MAX_CHILDREN=3
 MAX_DEPTH=5
+NO_JUDGE=false
 
 # ── Parse arguments ─────────────────────────────────────────────────────────
 print_usage() {
@@ -59,6 +61,7 @@ Options:
   --search <mode>         Search strategy: linear (default) or tree (greedy best-first)
   --max-children <N>      Tree search: max attempts per node (default: 3)
   --max-depth <N>         Tree search: max tree depth (default: 5)
+  --no-judge              Skip the Judge Agent review after the loop
   --resume                Resume from last checkpoint
   --dry-run               Print prompts without calling Claude
   -h, --help              Show this help
@@ -80,6 +83,7 @@ while [[ $# -gt 0 ]]; do
     --search)         SEARCH_MODE="$2"; _cli_search=1; shift 2 ;;
     --max-children)   MAX_CHILDREN="$2"; _cli_children=1; shift 2 ;;
     --max-depth)      MAX_DEPTH="$2"; _cli_depth=1; shift 2 ;;
+    --no-judge)       NO_JUDGE=true; shift ;;
     --resume)         RESUME=true; shift ;;
     --dry-run)        DRY_RUN=true; shift ;;
     -h|--help)        print_usage; exit 0 ;;
@@ -263,6 +267,7 @@ if [[ "$RESUME" == false ]]; then
   NOISE_FLOOR=$(echo "$baseline_result" | awk '{print $2}')
   log_ok "Baseline: ${BOLD}$BASELINE${NC} (noise floor: $NOISE_FLOOR)"
 fi
+INITIAL_BASELINE="$BASELINE"
 
 # If noise floor wasn't set (resume path), re-measure
 if [[ -z "${NOISE_FLOOR:-}" ]]; then
@@ -687,5 +692,14 @@ clear_checkpoint "$TARGET_DIR" "$RUN_ID"
 
 # Generate summary
 write_summary "$TARGET_DIR" "$DOMAIN_NAME"
+
+# ── Judge Agent review ─────────────────────────────────────────────────────
+if [[ "$NO_JUDGE" != "true" ]] && [[ "$DRY_RUN" != "true" ]] && [[ ${IMPROVEMENTS:-0} -gt 0 ]]; then
+  echo ""
+  log_bold "═══ Judge Agent Review ═══"
+  judge_review "$TARGET_DIR" "$DOMAIN_NAME" "$BRANCH" "${BASELINE:-0}" "${INITIAL_BASELINE:-0}" "${IMPROVEMENTS:-0}" "$TOTAL_COST" "$SEARCH_MODE" || true
+  log_bold "══════════════════════════"
+  echo ""
+fi
 
 log_ok "SOSL loop completed."

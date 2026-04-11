@@ -69,6 +69,21 @@ Mode detection: per-node (2+ failures on a node -> DRAFT, last failure was guard
 State lives in `.sosl/tree.json`. Each node stores: id, parent, branch, score, depth, visits.
 Branches named `sosl/${domain}/${timestamp}/${node_id}` (hierarchical).
 
+### Level 2.75: Judge Agent (post-loop review)
+After the optimization loop completes, a fresh-context Claude instance reviews everything:
+
+```
+Loop completes → write SUMMARY.md
+                → collect context (experiments.jsonl, session.md, git diff, directive)
+                → claude -p (read-only tools) reviews all commits
+                → verdict: APPROVE / REQUEST CHANGES / REJECT
+                → write .sosl/JUDGE_REPORT.md
+```
+
+The Judge has no context from the optimization run — it sees everything fresh. It checks:
+score validity, scope compliance, guard patterns, code completeness, session learning,
+and search quality (tree mode). Skip with `--no-judge`.
+
 ### Level 3: SOSL Night Run (macro)
 One domain, one branch, one overnight session:
 
@@ -76,7 +91,8 @@ One domain, one branch, one overnight session:
 Configure → Write directive.md, choose metric and guards
 Launch    → bash sosl.sh --domain ... --target ... --max-hours 8
 Sleep     → SOSL runs 20-50 iterations autonomously
-Review    → Morning: review the git branch, merge improvements
+Judge     → Fresh-context review: APPROVE / REQUEST CHANGES / REJECT
+Review    → Morning: review JUDGE_REPORT.md + the git branch, merge improvements
 ```
 
 ### Level 4: Parallel SOSL (system)
