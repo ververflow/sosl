@@ -50,6 +50,25 @@ Scope temperature across iterations within a single run:
 
 Plus: circuit breaker (stagnation detection stops the loop when no progress is being made).
 
+### Level 2.5: Tree Search (meso, `--search tree`)
+Optional greedy best-first search over the solution space (inspired by AIDE/Weco):
+
+```
+Linear:  root -> A -> B -> C -> stall -> STOP
+Tree:    root -> A -> B -> stall -> backtrack to A -> D -> E -> ...
+```
+
+Each successful commit becomes a **node** in a search tree. Failed attempts are recorded
+but don't create nodes. The **frontier** is all expandable leaf nodes.
+
+Selection: always expand the highest-scoring node (greedy best-first).
+Backtracking: `git checkout` to the selected node's branch within the same worktree.
+Session context: ancestor-scoped (Claude sees only the path from root to current node).
+Mode detection: per-node (2+ failures on a node -> DRAFT, last failure was guard -> DEBUG).
+
+State lives in `.sosl/tree.json`. Each node stores: id, parent, branch, score, depth, visits.
+Branches named `sosl/${domain}/${timestamp}/${node_id}` (hierarchical).
+
 ### Level 3: SOSL Night Run (macro)
 One domain, one branch, one overnight session:
 

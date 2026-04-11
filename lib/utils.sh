@@ -60,7 +60,7 @@ import sys, re, json
 ALLOWED_KEYS = {
     # sosl.sh config keys (string values)
     'TARGET_DIR', 'DOMAIN_DIR', 'CONFIG_FILE', 'MODEL',
-    'HEALTH_CHECK_URL', 'TARGET_URL', 'URLS',
+    'HEALTH_CHECK_URL', 'TARGET_URL', 'URLS', 'SEARCH_MODE',
     # sosl.sh config keys (numeric values)
     'MAX_ITERATIONS', 'MAX_HOURS', 'MAX_COST_USD', 'BUDGET_PER_ITER', 'SAMPLES',
     # domain config keys
@@ -70,6 +70,7 @@ ALLOWED_KEYS = {
 NUMERIC_KEYS = {
     'MAX_ITERATIONS', 'MAX_HOURS', 'MAX_COST_USD', 'BUDGET_PER_ITER',
     'SAMPLES', 'MIN_NOISE_FLOOR', 'MAX_NET_DELETIONS', 'MEASURE_TIMEOUT',
+    'MAX_CHILDREN', 'MAX_DEPTH',
 }
 
 # Values must not contain shell metacharacters that indicate code execution

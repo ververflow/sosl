@@ -39,6 +39,8 @@ strategy_summary = re.sub(r'[^\w\s\.\-\>\:\(\)\/,\'\"]', '', strategy_summary)[:
 sosl_dir = os.path.join(py_dir, '.sosl')
 os.makedirs(sosl_dir, exist_ok=True)
 
+node_id = os.environ.get('SOSL_NODE_ID', '')
+
 entry = {
     'ts': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
     'iter': int(iteration),
@@ -51,6 +53,8 @@ entry = {
     'mode': mode,
     'strategy': strategy_summary
 }
+if node_id:
+    entry['node_id'] = node_id
 
 jsonl_path = os.path.join(sosl_dir, 'experiments.jsonl')
 with open(jsonl_path, 'a', encoding='utf-8') as f:
@@ -116,13 +120,15 @@ write_summary() {
   local py_dir
   py_dir=$(to_py_path "$target_dir")
 
-  python3 - "$py_dir" "$domain" <<'PYEOF'
+  PYTHONIOENCODING=utf-8 python3 - "$py_dir" "$domain" <<'PYEOF'
 import json, os, sys
 
 py_dir, domain = sys.argv[1], sys.argv[2]
+sosl_dir = os.path.join(py_dir, '.sosl')
 
-jsonl_path = os.path.join(py_dir, '.sosl', 'experiments.jsonl')
-summary_path = os.path.join(py_dir, '.sosl', 'SUMMARY.md')
+jsonl_path = os.path.join(sosl_dir, 'experiments.jsonl')
+tree_path = os.path.join(sosl_dir, 'tree.json')
+summary_path = os.path.join(sosl_dir, 'SUMMARY.md')
 
 if not os.path.exists(jsonl_path):
     exit(0)
@@ -138,21 +144,93 @@ domain_entries = [e for e in entries if e['domain'] == domain]
 improved = [e for e in domain_entries if e['improved']]
 total_cost = sum(e['cost_usd'] for e in domain_entries)
 
+# Check if this was a tree search run
+tree = None
+if os.path.exists(tree_path):
+    with open(tree_path, encoding='utf-8') as f:
+        tree = json.load(f)
+
 with open(summary_path, 'w', encoding='utf-8') as f:
-    f.write(f'# SOSL Run Summary: {domain}\n\n')
-    f.write(f'Total iterations: {len(domain_entries)}\n')
-    f.write(f'Improvements: {len(improved)}\n')
-    f.write(f'Total cost: ${total_cost:.2f}\n\n')
-    if domain_entries:
-        first = domain_entries[0]['score_before']
-        last_improved = improved[-1]['score_after'] if improved else first
-        f.write(f'Score: {first} -> {last_improved}\n\n')
-    f.write('## Experiment Log\n\n')
-    f.write('| Iter | Before | After | Result | Cost | Summary |\n')
-    f.write('|------|--------|-------|--------|------|---------|\n')
-    for e in domain_entries:
-        status = 'OK' if e['improved'] else 'X'
-        after = e['score_after'] if e['score_after'] is not None else '-'
-        f.write(f'| {e["iter"]} | {e["score_before"]} | {after} | {status} | ${e["cost_usd"]:.2f} | {e["summary"]} |\n')
+    if tree:
+        # Tree search summary
+        nodes = tree["nodes"]
+        failed = tree.get("failed_attempts", [])
+        best_id = max(nodes, key=lambda nid: nodes[nid]["score"])
+        best = nodes[best_id]
+
+        # Best path
+        path = []
+        current = best_id
+        while current is not None:
+            if current not in nodes:
+                break
+            path.append(current)
+            current = nodes[current].get("parent_id")
+        path.reverse()
+
+        f.write(f'# SOSL Tree Search Summary: {domain}\n\n')
+        f.write(f'Search mode: tree (best-first)\n')
+        f.write(f'Total iterations: {len(domain_entries)}\n')
+        f.write(f'Nodes explored: {len(nodes)}\n')
+        f.write(f'Failed attempts: {len(failed)}\n')
+        f.write(f'Improvements: {len(improved)}\n')
+        f.write(f'Total cost: ${total_cost:.2f}\n\n')
+
+        root_score = nodes["root"]["score"]
+        f.write(f'Score: {root_score} -> {best["score"]}\n\n')
+
+        f.write('## Best Path\n\n')
+        for nid in path:
+            n = nodes[nid]
+            strategy = n.get("strategy", "baseline")[:60]
+            f.write(f'- **{nid}** [{n["score"]}] {strategy}\n')
+
+        f.write(f'\n## Merge Best Path\n\n')
+        f.write(f'```bash\ngit merge {best["branch"]}\n```\n\n')
+
+        # Tree visualization
+        f.write('## Tree\n\n```\n')
+
+        def render(nid, prefix="", is_last=True):
+            if nid not in nodes:
+                return
+            n = nodes[nid]
+            connector = "`-- " if is_last else "|-- "
+            star = " *" if nid in set(path) else ""
+            strategy = n.get("strategy", "baseline")[:30]
+            fails = sum(1 for fa in failed if fa["parent_id"] == nid)
+            extra = f" ({fails} failed)" if fails else ""
+            f.write(f'{prefix}{connector}{nid} [{n["score"]}] "{strategy}"{extra}{star}\n')
+            children = n.get("children", [])
+            child_prefix = prefix + ("    " if is_last else "|   ")
+            for i, cid in enumerate(children):
+                render(cid, child_prefix, i == len(children) - 1)
+
+        root = nodes["root"]
+        star = " *" if "root" in set(path) else ""
+        fails = sum(1 for fa in failed if fa["parent_id"] == "root")
+        extra = f" ({fails} failed)" if fails else ""
+        f.write(f'root [{root["score"]}] "baseline"{extra}{star}\n')
+        for i, cid in enumerate(root.get("children", [])):
+            render(cid, "", i == len(root.get("children", [])) - 1)
+
+        f.write('```\n\n`* = best path`\n')
+    else:
+        # Linear summary (unchanged)
+        f.write(f'# SOSL Run Summary: {domain}\n\n')
+        f.write(f'Total iterations: {len(domain_entries)}\n')
+        f.write(f'Improvements: {len(improved)}\n')
+        f.write(f'Total cost: ${total_cost:.2f}\n\n')
+        if domain_entries:
+            first = domain_entries[0]['score_before']
+            last_improved = improved[-1]['score_after'] if improved else first
+            f.write(f'Score: {first} -> {last_improved}\n\n')
+        f.write('## Experiment Log\n\n')
+        f.write('| Iter | Before | After | Result | Cost | Summary |\n')
+        f.write('|------|--------|-------|--------|------|---------|\n')
+        for e in domain_entries:
+            status = 'OK' if e['improved'] else 'X'
+            after = e['score_after'] if e['score_after'] is not None else '-'
+            f.write(f'| {e["iter"]} | {e["score_before"]} | {after} | {status} | ${e["cost_usd"]:.2f} | {e["summary"]} |\n')
 PYEOF
 }

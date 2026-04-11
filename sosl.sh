@@ -17,6 +17,7 @@ source "$SCRIPT_DIR/lib/annotate.sh"
 source "$SCRIPT_DIR/lib/temperature.sh"
 source "$SCRIPT_DIR/lib/session.sh"
 source "$SCRIPT_DIR/lib/strategy.sh"
+source "$SCRIPT_DIR/lib/tree.sh"
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 DOMAIN_DIR=""
@@ -31,6 +32,9 @@ HEALTH_CHECK_URL=""
 RESUME=false
 DRY_RUN=false
 CONFIG_FILE=""
+SEARCH_MODE="linear"
+MAX_CHILDREN=3
+MAX_DEPTH=5
 
 # ── Parse arguments ─────────────────────────────────────────────────────────
 print_usage() {
@@ -52,6 +56,9 @@ Options:
   --samples <N>           Measurements per evaluation (default: 5)
   --model <model>         Claude model to use (default: claude-sonnet-4-5)
   --health-check <url>    URL to check before starting (e.g., http://localhost:3000)
+  --search <mode>         Search strategy: linear (default) or tree (greedy best-first)
+  --max-children <N>      Tree search: max attempts per node (default: 3)
+  --max-depth <N>         Tree search: max tree depth (default: 5)
   --resume                Resume from last checkpoint
   --dry-run               Print prompts without calling Claude
   -h, --help              Show this help
@@ -70,6 +77,9 @@ while [[ $# -gt 0 ]]; do
     --samples)        SAMPLES="$2"; _cli_samples=1; shift 2 ;;
     --model)          MODEL="$2"; _cli_model=1; shift 2 ;;
     --health-check)   HEALTH_CHECK_URL="$2"; shift 2 ;;
+    --search)         SEARCH_MODE="$2"; _cli_search=1; shift 2 ;;
+    --max-children)   MAX_CHILDREN="$2"; _cli_children=1; shift 2 ;;
+    --max-depth)      MAX_DEPTH="$2"; _cli_depth=1; shift 2 ;;
     --resume)         RESUME=true; shift ;;
     --dry-run)        DRY_RUN=true; shift ;;
     -h|--help)        print_usage; exit 0 ;;
@@ -98,12 +108,16 @@ if [[ -n "$CONFIG_FILE" ]]; then
   _v=$(_cfg_get MODEL);         [[ -n "$_v" ]] && [[ "$_cli_model" != "1" ]]     && MODEL="$_v"
   _v=$(_cfg_get HEALTH_CHECK_URL); [[ -n "$_v" ]] && [[ -z "$HEALTH_CHECK_URL" ]] && HEALTH_CHECK_URL="$_v"
   _v=$(_cfg_get TARGET_URL);    [[ -n "$_v" ]] && export TARGET_URL="$_v"
+  _v=$(_cfg_get SEARCH_MODE);   [[ -n "$_v" ]] && [[ "$_cli_search" != "1" ]]    && SEARCH_MODE="$_v"
+  _v=$(_cfg_get MAX_CHILDREN);  [[ -n "$_v" ]] && [[ "$_cli_children" != "1" ]]  && MAX_CHILDREN="$_v"
+  _v=$(_cfg_get MAX_DEPTH);     [[ -n "$_v" ]] && [[ "$_cli_depth" != "1" ]]     && MAX_DEPTH="$_v"
   _v=$(_cfg_get URLS);          [[ -n "$_v" ]] && export URLS="$_v"
 fi
 
 # ── Validate ────────────────────────────────────────────────────────────────
 [[ -z "$DOMAIN_DIR" ]] && { log_err "Missing --domain"; print_usage; exit 1; }
 [[ -z "$TARGET_DIR" ]] && { log_err "Missing --target"; print_usage; exit 1; }
+[[ "$SEARCH_MODE" != "linear" && "$SEARCH_MODE" != "tree" ]] && { log_err "--search must be 'linear' or 'tree'"; exit 1; }
 
 # Resolve to absolute paths
 DOMAIN_DIR="$(cd "$DOMAIN_DIR" && pwd)"
@@ -272,8 +286,231 @@ log "Max iter:   $MAX_ITERATIONS"
 log "Max hours:  $MAX_HOURS"
 log "Max cost:   \$$MAX_COST_USD"
 log "Model:      $MODEL"
+log "Search:     $SEARCH_MODE"
+export SOSL_SEARCH_MODE="$SEARCH_MODE"
 log_bold "══════════════════════════"
 echo ""
+
+if [[ "$SEARCH_MODE" == "tree" ]]; then
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║ TREE SEARCH LOOP — greedy best-first exploration                        ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# Initialize tree with root node
+if [[ "$RESUME" == false ]]; then
+  tree_init "$TARGET_DIR" "$BRANCH" "$BASELINE" "$NOISE_FLOOR"
+  log_ok "Tree search initialized (root: $BASELINE, children: $MAX_CHILDREN, depth: $MAX_DEPTH)"
+fi
+
+GLOBAL_ITER=0
+
+while [[ $GLOBAL_ITER -lt $MAX_ITERATIONS ]]; do
+  ITER_START=$(date +%s)
+
+  # ── Circuit breakers ──────────────────────────────────────────────────────
+  hours_elapsed=$(elapsed_hours "$START_TIME")
+  if [[ $(float_gte "$hours_elapsed" "$MAX_HOURS") == "1" ]]; then
+    log_warn "Time limit reached ($hours_elapsed hours). Stopping."
+    break
+  fi
+  if [[ $(float_gte "$TOTAL_COST" "$MAX_COST_USD") == "1" ]]; then
+    log_warn "Cost limit reached (\$$TOTAL_COST). Stopping."
+    break
+  fi
+  remaining=$(float_add "$MAX_COST_USD" "-$TOTAL_COST")
+  if [[ $(float_gt "$BUDGET_PER_ITER" "$remaining") == "1" ]]; then
+    log_warn "Remaining budget (\$$remaining) < per-iter budget (\$$BUDGET_PER_ITER). Stopping."
+    break
+  fi
+
+  # ── Select node from frontier ─────────────────────────────────────────────
+  node_json=$(tree_select_node "$TARGET_DIR" "$MAX_CHILDREN" "$MAX_DEPTH")
+  if [[ -z "$node_json" ]]; then
+    log_warn "No expandable nodes remain. Stopping."
+    break
+  fi
+
+  node_id=$(echo "$node_json" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['id'])")
+  node_branch=$(echo "$node_json" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['branch'])")
+  node_score=$(echo "$node_json" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['score'])")
+  node_noise=$(echo "$node_json" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['noise_floor'])")
+  node_depth=$(echo "$node_json" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['depth'])")
+
+  log_bold "── Iteration $((GLOBAL_ITER + 1)) / $MAX_ITERATIONS (node: $node_id, depth: $node_depth) ──"
+
+  # Export node_id for annotate.sh to include in JSONL
+  export SOSL_NODE_ID="$node_id"
+
+  # ── Switch branch if needed ───────────────────────────────────────────────
+  current_branch=$(git -C "$WORK_DIR" branch --show-current 2>/dev/null || echo "")
+  if [[ "$current_branch" != "$node_branch" ]]; then
+    log "Switching to branch: $node_branch"
+    tree_switch_to_node "$WORK_DIR" "$node_branch"
+  fi
+
+  BASELINE="$node_score"
+  NOISE_FLOOR="$node_noise"
+
+  # ── Detect strategy mode (tree-scoped) ────────────────────────────────────
+  ITER_MODE=$(tree_detect_mode "$TARGET_DIR" "$node_id")
+  guard_error=""
+  if [[ "$ITER_MODE" == "DEBUG" ]]; then
+    guard_error=$(tree_get_last_guard_error "$TARGET_DIR" "$node_id")
+  fi
+  mode_guidance=$(get_mode_guidance "$ITER_MODE" "$guard_error")
+  log "Mode: ${BOLD}$ITER_MODE${NC} | Score: $BASELINE"
+
+  # ── Build prompt (tree-scoped session) ────────────────────────────────────
+  recent=$(get_recent "$TARGET_DIR" 3 2>/dev/null || echo "No previous experiments.")
+  scope_guidance=$(get_scope_guidance "$GLOBAL_ITER" "$MAX_ITERATIONS")
+  session_ctx=$(tree_session_get "$TARGET_DIR" "$node_id" 2>/dev/null || echo "")
+
+  prompt=$(build_prompt "$DIRECTIVE_FILE" "$BASELINE" "$((GLOBAL_ITER + 1))" "$MAX_ITERATIONS" "$recent" "$scope_guidance" "$WORK_DIR" "$session_ctx" "$mode_guidance")
+
+  if [[ "$DRY_RUN" == true ]]; then
+    log "DRY RUN — Prompt for iteration $((GLOBAL_ITER + 1)) (node $node_id):"
+    echo "---"
+    echo "$prompt"
+    echo "---"
+    GLOBAL_ITER=$((GLOBAL_ITER + 1))
+    continue
+  fi
+
+  # ── Call Claude ───────────────────────────────────────────────────────────
+  log "Calling Claude ($MODEL, budget: \$$BUDGET_PER_ITER)..."
+
+  claude_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
+    --output-format json \
+    --max-turns 15 \
+    --allowedTools "Read Edit Write Glob Grep Bash(npm:run *) Bash(npx:*) Bash(git:status) Bash(git:diff) Bash(git:log)" \
+    --max-budget-usd "$BUDGET_PER_ITER" \
+    --model "$MODEL" 2>/dev/null || echo '{"is_error": true}')
+
+  iter_cost=$(echo "$claude_output" | python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+    print(d.get('total_cost_usd', d.get('cost_usd', 0)))
+except (json.JSONDecodeError, KeyError, TypeError):
+    print(0)
+" 2>/dev/null || echo "0")
+
+  is_error=$(echo "$claude_output" | python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+    print('true' if d.get('is_error', False) else 'false')
+except (json.JSONDecodeError, KeyError, TypeError):
+    print('true')
+" 2>/dev/null || echo "true")
+
+  TOTAL_COST=$(float_add "$TOTAL_COST" "$iter_cost")
+  log "Claude cost: \$$iter_cost (total: \$$TOTAL_COST)"
+
+  strategy_summary=$(echo "$claude_output" | python3 -c "
+import json, sys, re
+try:
+    d = json.loads(sys.stdin.read())
+    text = d.get('result', d.get('content', ''))
+    if isinstance(text, list):
+        text = ' '.join(str(b.get('text', '')) for b in text if isinstance(b, dict))
+    m = re.search(r'STRATEGY:\s*(.+?)(?:\n|$)', str(text))
+    if m:
+        s = re.sub(r'[^\w\s\.\-\>\:\(\)\/,\'\"]', '', m.group(1))
+        print(s[:200])
+except Exception:
+    pass
+" 2>/dev/null || echo "")
+
+  # ── Handle errors ─────────────────────────────────────────────────────────
+  if [[ "$is_error" == "true" ]]; then
+    log_err "Claude returned an error. Recording failure."
+    git_revert_changes "$WORK_DIR"
+    tree_record_failure "$TARGET_DIR" "$node_id" "$ITER_MODE" "${strategy_summary:-Claude error}" "error" "$iter_cost" "$((GLOBAL_ITER + 1))"
+    append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Claude error" "$ITER_MODE" "$strategy_summary"
+    GLOBAL_ITER=$((GLOBAL_ITER + 1))
+    continue
+  fi
+
+  if ! git_has_changes "$WORK_DIR"; then
+    log_warn "No code changes made. Recording failure."
+    tree_record_failure "$TARGET_DIR" "$node_id" "$ITER_MODE" "${strategy_summary:-No changes}" "no_changes" "$iter_cost" "$((GLOBAL_ITER + 1))"
+    append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "$BASELINE" false "$iter_cost" "No changes" "$ITER_MODE" "$strategy_summary"
+    GLOBAL_ITER=$((GLOBAL_ITER + 1))
+    continue
+  fi
+
+  # ── Run guards ────────────────────────────────────────────────────────────
+  log "Running guards..."
+  guard_result=$(run_guards "$GUARD_SCRIPT" "$WORK_DIR" 2>&1) || {
+    log_err "Guard failed: $guard_result"
+    git_revert_changes "$WORK_DIR"
+    safe_result=$(sanitize_for_log "$guard_result")
+    tree_record_failure "$TARGET_DIR" "$node_id" "$ITER_MODE" "${strategy_summary:-Unknown}" "guard_fail" "$iter_cost" "$((GLOBAL_ITER + 1))"
+    append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Guard fail: $safe_result" "$ITER_MODE" "$strategy_summary"
+    GLOBAL_ITER=$((GLOBAL_ITER + 1))
+    continue
+  }
+  log_ok "Guards passed"
+
+  # ── Measure ───────────────────────────────────────────────────────────────
+  log "Measuring ($SAMPLES samples)..."
+  measure_result=$(measure_robust "$MEASURE_SCRIPT" "$WORK_DIR" "$SAMPLES")
+  new_score=$(echo "$measure_result" | awk '{print $1}')
+  new_noise=$(echo "$measure_result" | awk '{print $2}')
+  log "Score: $BASELINE → $new_score"
+
+  # ── Compare & branch ──────────────────────────────────────────────────────
+  if is_significant "$BASELINE" "$new_score" "$NOISE_FLOOR"; then
+    new_id=$(tree_generate_id)
+    new_branch="${node_branch}/${new_id}"
+    log_ok "Improvement! Creating node $new_id on $new_branch"
+
+    # Create new branch and commit
+    git -C "$WORK_DIR" checkout -b "$new_branch" 2>/dev/null
+    git_commit_sosl "$WORK_DIR" "$DOMAIN_NAME" "$BASELINE" "$new_score"
+
+    # Add to tree
+    tree_add_node "$TARGET_DIR" "$new_id" "$node_id" "$new_branch" "$new_score" "$new_noise" "$ITER_MODE" "${strategy_summary:-Improvement}" "$iter_cost"
+    append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "$new_score" true "$iter_cost" "Improved" "$ITER_MODE" "$strategy_summary"
+    session_update "$TARGET_DIR" "$((GLOBAL_ITER + 1))" "$ITER_MODE" "committed" "$BASELINE" "$new_score" "${strategy_summary:-Improvement}" ""
+    IMPROVEMENTS=$((IMPROVEMENTS + 1))
+  else
+    log_warn "No significant improvement ($new_score vs $BASELINE). Recording failure."
+    git_revert_changes "$WORK_DIR"
+    tree_record_failure "$TARGET_DIR" "$node_id" "$ITER_MODE" "${strategy_summary:-Below noise floor}" "no_improvement" "$iter_cost" "$((GLOBAL_ITER + 1))"
+    append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "$new_score" false "$iter_cost" "Below noise floor" "$ITER_MODE" "$strategy_summary"
+  fi
+
+  # ── Update tree iteration counter ─────────────────────────────────────────
+  tree_update_iteration "$TARGET_DIR" "$((GLOBAL_ITER + 1))"
+
+  ITER_DURATION=$(($(date +%s) - ITER_START))
+  log "Iteration $((GLOBAL_ITER + 1)) completed in ${ITER_DURATION}s"
+  echo ""
+
+  GLOBAL_ITER=$((GLOBAL_ITER + 1))
+done
+
+# Tree search summary
+echo ""
+log_bold "═══ Tree Search Results ═══"
+tree_summary "$TARGET_DIR"
+log "Best path:"
+tree_get_best_path "$TARGET_DIR"
+read best_score best_branch <<< $(tree_get_best "$TARGET_DIR")
+log "Merge best: git -C $TARGET_DIR merge $best_branch"
+log_bold "═══════════════════════════"
+
+# Set ITER for cleanup summary
+ITER=$GLOBAL_ITER
+BASELINE="$best_score"
+BRANCH="$best_branch"
+
+else
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║ LINEAR LOOP — original sequential optimization                          ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ── Main loop ───────────────────────────────────────────────────────────────
 while [[ $ITER -lt $MAX_ITERATIONS ]]; do
@@ -442,6 +679,8 @@ except Exception:
 
   ITER=$((ITER + 1))
 done
+
+fi  # end SEARCH_MODE if/else
 
 # Clear checkpoint on clean completion
 clear_checkpoint "$TARGET_DIR" "$RUN_ID"

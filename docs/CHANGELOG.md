@@ -1,13 +1,8 @@
 # CHANGELOG
 
-## Next: v0.4.0 — Tree Search & Multi-Project Scalability
+## Next: v0.5.0 — Review & Scale
 
-### Phase 3: Tree Search (planned)
-- [ ] Branch exploration: multiple paths from same baseline, prune dead branches
-- [ ] Solution selection heuristics (which branch to explore next)
-- [ ] Parallel branch evaluation
-
-### Phase 4: Review & Scale (planned)
+### Phase 4 (planned)
 - [ ] Judge Agent: fresh-context Claude instance reviews SOSL's commits before marking as ready
 - [ ] Branch finalization: group commits into independent, reviewable changesets
 - [ ] Secondary metrics tracking (tradeoff monitoring alongside primary metric)
@@ -15,6 +10,29 @@
 - [ ] Generic guards that auto-detect stack (Next.js vs Vite vs Python etc.)
 - [ ] Scheduler: cron or `claude --schedule` to run SOSL nightly on multiple projects
 - [ ] GitHub Actions workflow for cloud-based runs (no local machine needed overnight)
+
+---
+
+## v0.4.0 — Tree Search (April 11, 2026)
+
+SOSL can now explore multiple paths through the solution space instead of following a single linear chain. When an approach stalls, it backtracks to a previous promising state and tries a different direction.
+
+### What changed
+- **Tree search mode** (`--search tree`): greedy best-first exploration. Each successful commit becomes a node; the frontier is all expandable leaves. SOSL always expands the highest-scoring node.
+- **`lib/tree.sh`**: complete tree data structure — init, select, add node, record failure, switch branch, ancestor-scoped session context, mode detection, visualization.
+- **Git branch-per-node**: each improvement creates a new branch (`sosl/domain/timestamp/node_id`). Single worktree, branches switched via `git checkout`.
+- **Tree-scoped context**: Claude sees only its ancestor path + sibling summaries. Dead ends from the current path are injected; unrelated branches are excluded.
+- **Tree-scoped mode detection**: 2+ failures on a node triggers DRAFT; last guard fail triggers DEBUG. Independent per node, not global.
+- **Tree-aware summary**: `SUMMARY.md` includes ASCII tree visualization, best path, and merge instructions.
+- **Backward compatible**: `--search linear` (default) keeps the existing linear loop untouched.
+- **New CLI flags**: `--search`, `--max-children` (default: 3), `--max-depth` (default: 5).
+
+### Why this matters
+Linear search stops when stagnation hits — but stagnation at depth 15 doesn't mean there's nothing left at depth 8 with a different approach. Tree search (from AIDE research, arXiv 2502.13138) reports 4x improvement over linear on benchmarks by reusing promising solutions and exploring alternatives.
+
+### Sources leveraged
+- **AIDE/Weco** (tree search algorithm): greedy best-first, three-mode operator, atomic changes
+- **pi-autoresearch** (session persistence): ancestor-scoped context enables per-branch learning
 
 ---
 

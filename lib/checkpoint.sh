@@ -16,12 +16,15 @@ py_dir, run_id, iteration, baseline, total_cost, branch = sys.argv[1:7]
 sosl_dir = os.path.join(py_dir, '.sosl')
 os.makedirs(sosl_dir, exist_ok=True)
 
+search_mode = os.environ.get('SOSL_SEARCH_MODE', 'linear')
+
 data = {
     'run_id': run_id,
     'iteration': int(iteration),
     'baseline': float(baseline),
     'total_cost_usd': float(total_cost),
     'branch': branch,
+    'search_mode': search_mode,
     'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
 }
 
