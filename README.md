@@ -2,7 +2,7 @@
 
 > Point an AI agent at a metric. Go to sleep. Wake up with improvements.
 
-SOSL translates [Karpathy's autoresearch pattern](https://github.com/karpathy/autoresearch) from ML training to **software applications**. It runs Claude Code in an autonomous loop, measures a specific quality metric after each change, commits improvements, and reverts regressions -- so your software gets better while you sleep.
+SOSL translates [Karpathy's autoresearch pattern](https://github.com/karpathy/autoresearch) from ML training to **any system with a measurable metric** -- software, prompts, configs, documentation, data pipelines. It runs Claude Code in an autonomous loop, measures a quality metric after each change, commits improvements, and reverts regressions.
 
 ## How it Works
 
@@ -120,10 +120,6 @@ git checkout main && git merge sosl/<domain>/<timestamp>
 | **build-speed** | Any (autodetect) | Build time | Faster compilation/bundling |
 | **broken-links** | Docs/Markdown | Broken links | Documentation quality |
 | **skill-quality** | Claude Code skills | Structural quality | Improving AI skill prompts |
-| **code-quality** | JS/TS | ESLint errors | JavaScript/TypeScript cleanup |
-| **performance** | Next.js | Lighthouse score | Web performance |
-| **accessibility** | Next.js | Lighthouse a11y | WCAG compliance |
-| **bundle-size** | Next.js | Build output size | Smaller bundles |
 
 ```bash
 # Use an example directly:
@@ -283,7 +279,7 @@ bash sosl-parallel.sh \
 
 ## Architecture
 
-SOSL operates on 5 levels:
+SOSL operates on 6 levels:
 
 | Level | What | Scope |
 |-------|------|-------|
