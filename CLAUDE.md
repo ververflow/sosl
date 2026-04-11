@@ -16,7 +16,12 @@ lib/
   utils.sh               # Logging, json_get, float math, path conversion, health checks
   eval.sh                # measure_robust: runs measure.sh N times, returns median + MAD
   confidence.sh          # calculate_stats, is_significant (MAD-based noise floor)
-  guard.sh               # run_guards: universal guards + domain-specific guard.sh
+  guard.sh               # run_guards: universal + stack-specific + domain-specific guards
+  guards/
+    node.sh              # JS/TS: eslint-disable, @/ imports, package.json
+    python.sh            # Python: noqa, type:ignore, pyproject.toml
+    rust.sh              # Rust: #[allow], Cargo.toml
+    go.sh                # Go: //nolint, go.mod
   checkpoint.sh          # save/load/clear checkpoint for crash recovery
   annotate.sh            # JSONL experiment log + summary generation
   temperature.sh         # Scope guidance: EXPLORATION → REFINEMENT → POLISHING
@@ -58,6 +63,10 @@ These are the interfaces that make SOSL work. Get them wrong and the loop breaks
 **tree.json** (auto-generated, `--search tree` only): search tree state in `.sosl/tree.json`. Flat node map with parent/child relationships, scores, branches. Each successful commit = new node. Failed attempts stored separately. Greedy best-first selection expands highest-scoring frontier node.
 
 **Judge Agent** (`lib/judge.sh`): runs after the loop completes if there are improvements. Fresh-context Claude reviews all commits, experiment log, session history, and git diff. Produces `.sosl/JUDGE_REPORT.md` with APPROVE/REQUEST CHANGES/REJECT verdict. Read-only tools only. Skip with `--no-judge`.
+
+**project-local domain overrides**: drop `.sosl/domains/<domain>/` in your target repo with directive.md + measure.sh + guard.sh. SOSL checks there first, falls back to built-in domains. No forking needed.
+
+**stack-aware guards** (`lib/guard.sh` + `lib/guards/*.sh`): auto-detects the stack (Node, Python, Rust, Go) from marker files and applies appropriate checks (suppression comments, dependency additions, test deletions). Three layers: universal → stack-specific → domain-specific.
 
 **secondary metrics** (`lib/secondary.sh`): cross-domain tradeoff monitoring. Set `SECONDARY_DOMAINS="bundle-size,code-quality"` in domain config.sh. After each committed improvement, runs each secondary domain's measure.sh once (1 sample). Warns if secondary metrics degrade. Informational only — does not block commits. Injected into Claude's prompt via `{{SECONDARY_METRICS}}`.
 

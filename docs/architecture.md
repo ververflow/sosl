@@ -114,11 +114,24 @@ Review       → Morning: 3-4 branches of improvements ready for merge
 - Must be deterministic (same code → same score, within noise margin)
 - Must run in < 120 seconds for practical iteration speed
 
-### guard.sh
+### guard.sh (domain-specific)
 - Takes one argument: target directory path
 - Exit 0 = all checks pass (safe to measure)
 - Exit 1 = guard violation (reason on stdout, changes will be reverted)
 - Guards are binary: either the change is safe or it isn't
+- Runs AFTER universal and stack-specific guards
+
+### Guard layers (lib/guard.sh)
+Three layers execute in order — first failure stops:
+1. **Universal** (any stack): file count limit, scope enforcement, deletion limit
+2. **Stack-specific** (auto-detected): suppression comments, dependency checks, test patterns
+   - Auto-detected from marker files: package.json → node, pyproject.toml → python, etc.
+   - Modules in `lib/guards/`: node.sh, python.sh, rust.sh, go.sh
+3. **Domain-specific**: the domain's guard.sh (tsc, build, tests, etc.)
+
+### Project-local domain overrides
+SOSL checks `$TARGET_DIR/.sosl/domains/$DOMAIN_NAME/` before using built-in domains.
+If directive.md + measure.sh + guard.sh exist there, that version takes precedence.
 
 ### directive.md
 - Markdown file with instructions for Claude

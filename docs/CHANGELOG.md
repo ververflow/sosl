@@ -13,6 +13,21 @@
 
 ---
 
+## v0.7.0 — Project Scalability (April 11, 2026)
+
+SOSL is no longer locked to Next.js/TypeScript. Two changes unlock any project:
+
+### What changed
+- **Project-local domain overrides**: drop `.sosl/domains/<domain>/` in your target repo with directive.md + measure.sh + guard.sh. SOSL checks there first, falls back to built-in. No forking needed.
+- **Stack-aware guards**: auto-detects Node, Python, Rust, Go from marker files. Three-layer guard architecture: universal (file count, scope, deletions) → stack-specific (suppression comments, dependency checks, test patterns) → domain-specific (tsc, build, tests).
+- **Guard modules** (`lib/guards/`): node.sh, python.sh, rust.sh, go.sh. Each exports `run_stack_guards()` with stack-appropriate checks.
+- **`detect_stack()`**: checks package.json, pyproject.toml, Cargo.toml, go.mod (including monorepo patterns like `frontend/package.json`).
+
+### Why this matters
+SOSL was feature-complete but only worked on Next.js/TS. Now any project with a measurable metric can use SOSL: Python ML pipelines (pytest score), Rust binaries (compile time), Go services (benchmark throughput). Users define their own domains without touching the framework.
+
+---
+
 ## v0.6.0 — Secondary Metrics (April 11, 2026)
 
 SOSL now monitors tradeoffs across domains. When optimizing performance, it also checks bundle size and code quality — warning if the primary metric improves at the cost of others.

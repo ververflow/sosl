@@ -129,6 +129,18 @@ DOMAIN_DIR="$(cd "$DOMAIN_DIR" && pwd)"
 TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 
 DOMAIN_NAME="$(basename "$DOMAIN_DIR")"
+
+# ── Project-local domain override ──────────────────────────────────────────
+# If the target repo has .sosl/domains/<domain>/ with all required files,
+# use that instead of the built-in domain. This lets projects customize
+# SOSL without forking the framework.
+PROJECT_LOCAL_DOMAIN="$TARGET_DIR/.sosl/domains/$DOMAIN_NAME"
+if [[ -d "$PROJECT_LOCAL_DOMAIN" ]] && [[ -f "$PROJECT_LOCAL_DOMAIN/directive.md" ]] \
+   && [[ -f "$PROJECT_LOCAL_DOMAIN/measure.sh" ]] && [[ -f "$PROJECT_LOCAL_DOMAIN/guard.sh" ]]; then
+  log "Using project-local domain: $PROJECT_LOCAL_DOMAIN"
+  DOMAIN_DIR="$PROJECT_LOCAL_DOMAIN"
+fi
+
 DIRECTIVE_FILE="$DOMAIN_DIR/directive.md"
 MEASURE_SCRIPT="$DOMAIN_DIR/measure.sh"
 GUARD_SCRIPT="$DOMAIN_DIR/guard.sh"
