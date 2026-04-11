@@ -15,6 +15,8 @@ source "$SCRIPT_DIR/lib/guard.sh"
 source "$SCRIPT_DIR/lib/checkpoint.sh"
 source "$SCRIPT_DIR/lib/annotate.sh"
 source "$SCRIPT_DIR/lib/temperature.sh"
+source "$SCRIPT_DIR/lib/session.sh"
+source "$SCRIPT_DIR/lib/strategy.sh"
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 DOMAIN_DIR=""
@@ -61,12 +63,12 @@ while [[ $# -gt 0 ]]; do
     --domain)         DOMAIN_DIR="$2"; shift 2 ;;
     --target)         TARGET_DIR="$2"; shift 2 ;;
     --config)         CONFIG_FILE="$2"; shift 2 ;;
-    --max-iterations) MAX_ITERATIONS="$2"; shift 2 ;;
-    --max-hours)      MAX_HOURS="$2"; shift 2 ;;
-    --max-cost)       MAX_COST_USD="$2"; shift 2 ;;
-    --budget-per-iter) BUDGET_PER_ITER="$2"; shift 2 ;;
-    --samples)        SAMPLES="$2"; shift 2 ;;
-    --model)          MODEL="$2"; shift 2 ;;
+    --max-iterations) MAX_ITERATIONS="$2"; _cli_max_iter=1; shift 2 ;;
+    --max-hours)      MAX_HOURS="$2"; _cli_max_hours=1; shift 2 ;;
+    --max-cost)       MAX_COST_USD="$2"; _cli_max_cost=1; shift 2 ;;
+    --budget-per-iter) BUDGET_PER_ITER="$2"; _cli_budget=1; shift 2 ;;
+    --samples)        SAMPLES="$2"; _cli_samples=1; shift 2 ;;
+    --model)          MODEL="$2"; _cli_model=1; shift 2 ;;
     --health-check)   HEALTH_CHECK_URL="$2"; shift 2 ;;
     --resume)         RESUME=true; shift ;;
     --dry-run)        DRY_RUN=true; shift ;;
@@ -76,36 +78,27 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Load config file if provided ────────────────────────────────────────────
+# Security: config files are parsed by Python, never sourced by bash.
+# Only known keys with validated value types are accepted.
 if [[ -n "$CONFIG_FILE" ]]; then
   if [[ ! -f "$CONFIG_FILE" ]]; then
     log_err "Config file not found: $CONFIG_FILE"
     exit 1
   fi
-  # Validate config contains only variable assignments and comments (no commands)
-  if grep -qvE '^\s*(#|$|[A-Z_]+[A-Z0-9_]*=)' "$CONFIG_FILE"; then
-    log_err "Config file contains non-assignment lines (only KEY=value and comments allowed):"
-    grep -vnE '^\s*(#|$|[A-Z_]+[A-Z0-9_]*=)' "$CONFIG_FILE" | head -3
-    exit 1
-  fi
-  # Save all CLI-set values, source config, restore CLI values (CLI wins)
-  _save_domain="$DOMAIN_DIR" _save_target="$TARGET_DIR"
-  _save_max_iter="$MAX_ITERATIONS" _save_max_hours="$MAX_HOURS"
-  _save_max_cost="$MAX_COST_USD" _save_budget="$BUDGET_PER_ITER"
-  _save_samples="$SAMPLES" _save_model="$MODEL"
-  _save_health="$HEALTH_CHECK_URL" _save_resume="$RESUME" _save_dry="$DRY_RUN"
-  source "$CONFIG_FILE"
-  # Restore CLI args (non-empty = was set on CLI)
-  [[ -n "$_save_domain" ]] && DOMAIN_DIR="$_save_domain"
-  [[ -n "$_save_target" ]] && TARGET_DIR="$_save_target"
-  [[ "$_save_max_iter" != "50" ]] && MAX_ITERATIONS="$_save_max_iter"
-  [[ "$_save_max_hours" != "10" ]] && MAX_HOURS="$_save_max_hours"
-  [[ "$_save_max_cost" != "25.00" ]] && MAX_COST_USD="$_save_max_cost"
-  [[ "$_save_budget" != "1.00" ]] && BUDGET_PER_ITER="$_save_budget"
-  [[ "$_save_samples" != "5" ]] && SAMPLES="$_save_samples"
-  [[ "$_save_model" != "claude-sonnet-4-5" ]] && MODEL="$_save_model"
-  [[ -n "$_save_health" ]] && HEALTH_CHECK_URL="$_save_health"
-  [[ "$_save_resume" == "true" ]] && RESUME=true
-  [[ "$_save_dry" == "true" ]] && DRY_RUN=true
+  config_json=$(parse_config "$CONFIG_FILE") || exit 1
+  # Apply config values (CLI flags override: only apply if CLI left the default)
+  _cfg_get() { echo "$config_json" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); v=d.get(sys.argv[1],''); print(v if v!='' else '')" "$1"; }
+  _v=$(_cfg_get DOMAIN_DIR);    [[ -n "$_v" ]] && [[ -z "$DOMAIN_DIR" ]]        && DOMAIN_DIR="$_v"
+  _v=$(_cfg_get TARGET_DIR);    [[ -n "$_v" ]] && [[ -z "$TARGET_DIR" ]]        && TARGET_DIR="$_v"
+  _v=$(_cfg_get MAX_ITERATIONS); [[ -n "$_v" ]] && [[ "$_cli_max_iter" != "1" ]]  && MAX_ITERATIONS="$_v"
+  _v=$(_cfg_get MAX_HOURS);     [[ -n "$_v" ]] && [[ "$_cli_max_hours" != "1" ]] && MAX_HOURS="$_v"
+  _v=$(_cfg_get MAX_COST_USD);  [[ -n "$_v" ]] && [[ "$_cli_max_cost" != "1" ]]  && MAX_COST_USD="$_v"
+  _v=$(_cfg_get BUDGET_PER_ITER); [[ -n "$_v" ]] && [[ "$_cli_budget" != "1" ]]  && BUDGET_PER_ITER="$_v"
+  _v=$(_cfg_get SAMPLES);       [[ -n "$_v" ]] && [[ "$_cli_samples" != "1" ]]   && SAMPLES="$_v"
+  _v=$(_cfg_get MODEL);         [[ -n "$_v" ]] && [[ "$_cli_model" != "1" ]]     && MODEL="$_v"
+  _v=$(_cfg_get HEALTH_CHECK_URL); [[ -n "$_v" ]] && [[ -z "$HEALTH_CHECK_URL" ]] && HEALTH_CHECK_URL="$_v"
+  _v=$(_cfg_get TARGET_URL);    [[ -n "$_v" ]] && export TARGET_URL="$_v"
+  _v=$(_cfg_get URLS);          [[ -n "$_v" ]] && export URLS="$_v"
 fi
 
 # ── Validate ────────────────────────────────────────────────────────────────
@@ -122,8 +115,13 @@ MEASURE_SCRIPT="$DOMAIN_DIR/measure.sh"
 GUARD_SCRIPT="$DOMAIN_DIR/guard.sh"
 
 # Load per-domain config (e.g., MIN_NOISE_FLOOR)
+# Security: parsed by Python, never sourced. Only known keys accepted.
 if [[ -f "$DOMAIN_DIR/config.sh" ]]; then
-  source "$DOMAIN_DIR/config.sh"
+  domain_cfg=$(parse_config "$DOMAIN_DIR/config.sh") || exit 1
+  _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "MIN_NOISE_FLOOR"); [[ -n "$_v" ]] && MIN_NOISE_FLOOR="$_v"
+  _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "ALLOWED_PATHS"); [[ -n "$_v" ]] && ALLOWED_PATHS="$_v"
+  _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "MAX_NET_DELETIONS"); [[ -n "$_v" ]] && MAX_NET_DELETIONS="$_v"
+  _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "MEASURE_TIMEOUT"); [[ -n "$_v" ]] && MEASURE_TIMEOUT="$_v"
 fi
 
 [[ ! -f "$DIRECTIVE_FILE" ]] && { log_err "Missing: $DIRECTIVE_FILE"; exit 1; }
@@ -259,6 +257,11 @@ if [[ -z "${NOISE_FLOOR:-}" ]]; then
   NOISE_FLOOR=$(echo "$nf_result" | awk '{print $2}')
 fi
 
+# Initialize session document (skip on resume — session.md already exists)
+if [[ "$RESUME" == false ]]; then
+  session_init "$TARGET_DIR" "$DOMAIN_NAME" "$BASELINE"
+fi
+
 echo ""
 log_bold "═══ Starting SOSL Loop ═══"
 log "Domain:     $DOMAIN_NAME"
@@ -299,11 +302,21 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
 
   log_bold "── Iteration $((ITER + 1)) / $MAX_ITERATIONS ──"
 
+  # ── Detect strategy mode ─────────────────────────────────────────────────
+  ITER_MODE=$(detect_mode "$TARGET_DIR" "$STAGNATION")
+  guard_error=""
+  if [[ "$ITER_MODE" == "DEBUG" ]]; then
+    guard_error=$(get_last_guard_error "$TARGET_DIR")
+  fi
+  mode_guidance=$(get_mode_guidance "$ITER_MODE" "$guard_error")
+  log "Mode: ${BOLD}$ITER_MODE${NC}"
+
   # ── Build prompt ──────────────────────────────────────────────────────────
   recent=$(get_recent "$TARGET_DIR" 3 2>/dev/null || echo "No previous experiments.")
   scope_guidance=$(get_scope_guidance "$ITER" "$MAX_ITERATIONS")
+  session_ctx=$(session_get "$TARGET_DIR" 2>/dev/null || echo "")
 
-  prompt=$(build_prompt "$DIRECTIVE_FILE" "$BASELINE" "$((ITER + 1))" "$MAX_ITERATIONS" "$recent" "$scope_guidance" "$WORK_DIR")
+  prompt=$(build_prompt "$DIRECTIVE_FILE" "$BASELINE" "$((ITER + 1))" "$MAX_ITERATIONS" "$recent" "$scope_guidance" "$WORK_DIR" "$session_ctx" "$mode_guidance")
 
   if [[ "$DRY_RUN" == true ]]; then
     log "DRY RUN — Prompt for iteration $((ITER + 1)):"
@@ -320,7 +333,7 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
   claude_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
     --output-format json \
     --max-turns 15 \
-    --allowedTools "Read Edit Write Glob Grep Bash(npm:*) Bash(npx:*) Bash(node:*) Bash(git:status) Bash(git:diff) Bash(git:log)" \
+    --allowedTools "Read Edit Write Glob Grep Bash(npm:run *) Bash(npx:*) Bash(git:status) Bash(git:diff) Bash(git:log)" \
     --max-budget-usd "$BUDGET_PER_ITER" \
     --model "$MODEL" 2>/dev/null || echo '{"is_error": true}')
 
@@ -346,10 +359,28 @@ except (json.JSONDecodeError, KeyError, TypeError):
   TOTAL_COST=$(float_add "$TOTAL_COST" "$iter_cost")
   log "Claude cost: \$$iter_cost (total: \$$TOTAL_COST)"
 
+  # Extract strategy summary from Claude's output (looks for "STRATEGY: ..." line)
+  strategy_summary=$(echo "$claude_output" | python3 -c "
+import json, sys, re
+try:
+    d = json.loads(sys.stdin.read())
+    text = d.get('result', d.get('content', ''))
+    if isinstance(text, list):
+        text = ' '.join(str(b.get('text', '')) for b in text if isinstance(b, dict))
+    m = re.search(r'STRATEGY:\s*(.+?)(?:\n|$)', str(text))
+    if m:
+        # Sanitize: strip non-printable, cap length
+        s = re.sub(r'[^\w\s\.\-\>\:\(\)\/,\'\"]', '', m.group(1))
+        print(s[:200])
+except Exception:
+    pass
+" 2>/dev/null || echo "")
+
   if [[ "$is_error" == "true" ]]; then
     log_err "Claude returned an error. Skipping iteration."
     git_revert_changes "$WORK_DIR"
-    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Claude error"
+    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Claude error" "$ITER_MODE" "$strategy_summary"
+    session_update "$TARGET_DIR" "$((ITER + 1))" "$ITER_MODE" "error" "$BASELINE" "" "${strategy_summary:-Claude error}" ""
     STAGNATION=$((STAGNATION + 1))
     ITER=$((ITER + 1))
     continue
@@ -358,7 +389,8 @@ except (json.JSONDecodeError, KeyError, TypeError):
   # ── Check for changes ────────────────────────────────────────────────────
   if ! git_has_changes "$WORK_DIR"; then
     log_warn "No code changes made. Skipping."
-    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "$BASELINE" false "$iter_cost" "No changes"
+    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "$BASELINE" false "$iter_cost" "No changes" "$ITER_MODE" "$strategy_summary"
+    session_update "$TARGET_DIR" "$((ITER + 1))" "$ITER_MODE" "reverted" "$BASELINE" "" "${strategy_summary:-No changes made}" ""
     STAGNATION=$((STAGNATION + 1))
     ITER=$((ITER + 1))
     continue
@@ -370,7 +402,8 @@ except (json.JSONDecodeError, KeyError, TypeError):
     log_err "Guard failed: $guard_result"
     git_revert_changes "$WORK_DIR"
     safe_result=$(sanitize_for_log "$guard_result")
-    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Guard fail: $safe_result"
+    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Guard fail: $safe_result" "$ITER_MODE" "$strategy_summary"
+    session_update "$TARGET_DIR" "$((ITER + 1))" "$ITER_MODE" "guard_fail" "$BASELINE" "" "${strategy_summary:-Unknown}" "$safe_result"
     STAGNATION=$((STAGNATION + 1))
     ITER=$((ITER + 1))
     continue
@@ -387,14 +420,16 @@ except (json.JSONDecodeError, KeyError, TypeError):
   if is_significant "$BASELINE" "$new_score" "$NOISE_FLOOR"; then
     log_ok "Improvement detected! Committing."
     git_commit_sosl "$WORK_DIR" "$DOMAIN_NAME" "$BASELINE" "$new_score"
-    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "$new_score" true "$iter_cost" "Improved"
+    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "$new_score" true "$iter_cost" "Improved" "$ITER_MODE" "$strategy_summary"
+    session_update "$TARGET_DIR" "$((ITER + 1))" "$ITER_MODE" "committed" "$BASELINE" "$new_score" "${strategy_summary:-Improvement}" ""
     BASELINE="$new_score"
     IMPROVEMENTS=$((IMPROVEMENTS + 1))
     STAGNATION=0
   else
     log_warn "No significant improvement ($new_score vs baseline $BASELINE, noise $NOISE_FLOOR). Reverting."
     git_revert_changes "$WORK_DIR"
-    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "$new_score" false "$iter_cost" "Below noise floor"
+    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "$new_score" false "$iter_cost" "Below noise floor" "$ITER_MODE" "$strategy_summary"
+    session_update "$TARGET_DIR" "$((ITER + 1))" "$ITER_MODE" "reverted" "$BASELINE" "$new_score" "${strategy_summary:-Below noise floor}" ""
     STAGNATION=$((STAGNATION + 1))
   fi
 

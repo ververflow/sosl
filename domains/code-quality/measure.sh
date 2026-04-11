@@ -20,4 +20,7 @@ except:
 ")
 
 # Invert: higher score = fewer errors (ceiling at 1000)
-python3 -c "print(max(0, 1000 - int($ERROR_COUNT)))"
+python3 - "$ERROR_COUNT" <<'PYEOF'
+import sys
+print(max(0, 1000 - int(sys.argv[1])))
+PYEOF

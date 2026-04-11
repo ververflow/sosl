@@ -8,25 +8,27 @@ save_checkpoint() {
   local py_dir
   py_dir=$(to_py_path "$target_dir")
 
-  python3 -c "
-import json, datetime, os
+  python3 - "$py_dir" "$run_id" "$iteration" "$baseline" "$total_cost" "$branch" <<'PYEOF'
+import json, datetime, os, sys
 
-sosl_dir = os.path.join(r'$py_dir', '.sosl')
+py_dir, run_id, iteration, baseline, total_cost, branch = sys.argv[1:7]
+
+sosl_dir = os.path.join(py_dir, '.sosl')
 os.makedirs(sosl_dir, exist_ok=True)
 
 data = {
-    'run_id': '$run_id',
-    'iteration': int($iteration),
-    'baseline': float($baseline),
-    'total_cost_usd': float($total_cost),
-    'branch': '$branch',
+    'run_id': run_id,
+    'iteration': int(iteration),
+    'baseline': float(baseline),
+    'total_cost_usd': float(total_cost),
+    'branch': branch,
     'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
 }
 
 checkpoint_path = os.path.join(sosl_dir, 'checkpoint.json')
 with open(checkpoint_path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
-"
+PYEOF
 }
 
 # Load checkpoint for a domain
@@ -36,19 +38,21 @@ load_checkpoint() {
   local py_dir
   py_dir=$(to_py_path "$target_dir")
 
-  python3 -c "
+  python3 - "$py_dir" "$domain" <<'PYEOF' 2>/dev/null
 import json, sys, os
 
-checkpoint_path = os.path.join(r'$py_dir', '.sosl', 'checkpoint.json')
+py_dir, domain = sys.argv[1], sys.argv[2]
+
+checkpoint_path = os.path.join(py_dir, '.sosl', 'checkpoint.json')
 if not os.path.exists(checkpoint_path):
     sys.exit(0)
 
 with open(checkpoint_path, encoding='utf-8') as f:
     d = json.load(f)
 
-if '$domain' in d.get('run_id', ''):
+if domain in d.get('run_id', ''):
     print(json.dumps(d))
-" 2>/dev/null
+PYEOF
 }
 
 # Clear checkpoint
@@ -58,9 +62,9 @@ clear_checkpoint() {
   local py_dir
   py_dir=$(to_py_path "$target_dir")
 
-  python3 -c "
-import os
-p = os.path.join(r'$py_dir', '.sosl', 'checkpoint.json')
+  python3 - "$py_dir" <<'PYEOF' 2>/dev/null || true
+import os, sys
+p = os.path.join(sys.argv[1], '.sosl', 'checkpoint.json')
 if os.path.exists(p): os.remove(p)
-" 2>/dev/null || true
+PYEOF
 }

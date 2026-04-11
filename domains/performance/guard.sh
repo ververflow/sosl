@@ -12,13 +12,13 @@ FRONTEND_DIR="$TARGET_DIR/frontend"
 
 # ── 1. Clear tsc incremental cache only (NOT .next — that kills the dev server)
 if [[ -d "$FRONTEND_DIR" ]]; then
-  PY_FRONTEND=$(python3 -c "import os; print(os.path.normpath('$FRONTEND_DIR'))" 2>/dev/null || echo "$FRONTEND_DIR")
-  python3 -c "
-import os
+  python3 - "$FRONTEND_DIR" <<'PYEOF' 2>/dev/null || true
+import os, sys
+frontend = os.path.normpath(sys.argv[1])
 for f in ['tsconfig.tsbuildinfo', '.tsbuildinfo']:
-    p = os.path.join(r'$PY_FRONTEND', f)
+    p = os.path.join(frontend, f)
     if os.path.exists(p): os.remove(p)
-" 2>/dev/null || true
+PYEOF
 fi
 
 # ── 2. TypeScript must compile (fresh incremental check) ─────────────────────

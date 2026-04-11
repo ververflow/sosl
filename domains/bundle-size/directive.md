@@ -8,6 +8,11 @@ Current score: **{{CURRENT_SCORE}}** (inverted: higher = smaller bundle). Target
 - Iteration: {{ITERATION}} of {{MAX_ITERATIONS}}
 - {{SCOPE_GUIDANCE}}
 
+{{STRATEGY_MODE}}
+
+## Session History
+{{SESSION_CONTEXT}}
+
 ## Previous Experiments
 {{RECENT_RESULTS}}
 

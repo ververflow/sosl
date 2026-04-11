@@ -1,14 +1,46 @@
 # CHANGELOG
 
-## Next: v0.3.0 — Multi-Project Scalability
+## Next: v0.4.0 — Tree Search & Multi-Project Scalability
 
-Current limitation: directives and guards are project-specific (Next.js, `frontend/` layout). To run SOSL on any project without modifying the SOSL repo:
+### Phase 3: Tree Search (planned)
+- [ ] Branch exploration: multiple paths from same baseline, prune dead branches
+- [ ] Solution selection heuristics (which branch to explore next)
+- [ ] Parallel branch evaluation
 
-- [ ] Project-local domain overrides: `your-project/.sosl/domains/performance/` takes precedence over SOSL's built-in domains
+### Phase 4: Review & Scale (planned)
+- [ ] Judge Agent: fresh-context Claude instance reviews SOSL's commits before marking as ready
+- [ ] Branch finalization: group commits into independent, reviewable changesets
+- [ ] Secondary metrics tracking (tradeoff monitoring alongside primary metric)
+- [ ] Project-local domain overrides: `your-project/.sosl/domains/performance/`
 - [ ] Generic guards that auto-detect stack (Next.js vs Vite vs Python etc.)
 - [ ] Scheduler: cron or `claude --schedule` to run SOSL nightly on multiple projects
 - [ ] GitHub Actions workflow for cloud-based runs (no local machine needed overnight)
-- [ ] Judge Agent: fresh-context Claude instance reviews SOSL's commits before marking as ready
+
+---
+
+## v0.3.0 — Iteration Intelligence (April 11, 2026)
+
+SOSL now learns within a run. Each iteration builds on structured knowledge of what was tried, what failed, and what worked — instead of starting blind every time.
+
+### What changed
+- **Living session document** (`lib/session.sh`): `.sosl/session.md` tracks strategies tried, dead ends (don't retry), and key wins (what works) across iterations. Injected into Claude's prompt via `{{SESSION_CONTEXT}}`.
+- **Strategy modes** (`lib/strategy.sh`): each iteration runs as DRAFT (fresh approach), DEBUG (fix guard failure), or IMPROVE (incremental refinement). Inspired by AIDE's three-mode operator.
+- **Mode detection logic**: guard fail → DEBUG, repeated guard fails → DRAFT, stagnation ≥ 4 → DRAFT, normal → IMPROVE. High stagnation overrides everything.
+- **Strategy extraction**: Claude's output is parsed for `STRATEGY:` lines to capture what was attempted — stored in experiments.jsonl and session.md.
+- **Enhanced experiment log**: `mode` and `strategy` fields added to JSONL entries.
+- **Enhanced prompt**: new `{{SESSION_CONTEXT}}` and `{{STRATEGY_MODE}}` placeholders in all domain directives.
+
+### Why this matters
+Without session memory, Claude retries the same failed approach because it has no memory of previous iterations beyond recent scores. With session memory:
+- Dead ends are explicitly marked — Claude won't retry approaches that hit guard failures
+- Successful strategies are highlighted — Claude builds on what works
+- Mode-specific prompts give targeted instructions (fix the error vs. try something new)
+- The strategy modes map to AIDE's research: different situations need fundamentally different prompting strategies
+
+### Sources leveraged
+- **pi-autoresearch** (`autoresearch.md`): living session document pattern
+- **AIDE/Weco** (three-mode operator): DRAFT/DEBUG/IMPROVE distinction
+- **Ralph** (circuit breaker + response analysis): stuck-loop detection via pattern analysis
 
 ---
 

@@ -79,11 +79,10 @@ print(added)
 
   if [[ -n "$frontend_src" ]]; then
     local broken_imports
-    broken_imports=$(python3 -c "
-import re, os, glob
+    broken_imports=$(python3 - "$frontend_src" <<'PYEOF' 2>/dev/null
+import re, os, glob, sys
 
-src_dir = '$frontend_src'
-# Determine alias base: @/ maps to src/ (inside frontend/) or src/ (root)
+src_dir = sys.argv[1]
 alias_base = src_dir
 
 broken = []
@@ -94,7 +93,7 @@ for ext in ('*.ts', '*.tsx'):
                 content = f.read()
         except:
             continue
-        for m in re.finditer(r'from\s+[\"\\']@/([^\"\\'\s]+)[\"\\']', content):
+        for m in re.finditer(r'from\s+["\']@/([^"\'\s]+)["\']', content):
             import_path = m.group(1)
             resolved = os.path.join(alias_base, import_path)
             candidates = [
@@ -110,7 +109,8 @@ for ext in ('*.ts', '*.tsx'):
 if broken:
     for b in broken[:10]:
         print(b)
-" 2>/dev/null)
+PYEOF
+)
 
     if [[ -n "$broken_imports" ]]; then
       echo "Dangling imports — files referenced but don't exist:"
@@ -173,9 +173,19 @@ print(max(0, deletions - insertions))
   fi
 
   # ── Domain-specific guard (heavier: tsc, build, tests) ────────────────────
+  # Security: run guards with a clean PATH that excludes the target's
+  # node_modules/.bin to prevent a hostile repo from overriding tsc/eslint/etc.
   if [[ -f "$guard_script" ]]; then
+    # Build a clean PATH: keep system paths, remove any node_modules/.bin from target
+    local clean_path
+    clean_path=$(echo "$PATH" | tr ':' '\n' | grep -v "$target_dir" | grep -v "node_modules/.bin" | tr '\n' ':')
+    # Re-add global npm bin so npx still works
+    local npm_global_bin
+    npm_global_bin=$(npm root -g 2>/dev/null | sed 's|/lib/node_modules||' || true)
+    [[ -n "$npm_global_bin" ]] && clean_path="$npm_global_bin/bin:$npm_global_bin:$clean_path"
+
     local guard_output
-    guard_output=$(bash "$guard_script" "$target_dir" 2>&1)
+    guard_output=$(PATH="$clean_path" bash "$guard_script" "$target_dir" 2>&1)
     local guard_exit=$?
     if [[ $guard_exit -ne 0 ]]; then
       echo "$guard_output"

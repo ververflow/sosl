@@ -66,7 +66,10 @@ shutil.rmtree(lh_dir, ignore_errors=True)
 PYEOF
 )
 
-  if python3 -c "exit(0 if float($SCORE) < float($LOWEST_SCORE) else 1)" 2>/dev/null; then
+  if python3 - "$SCORE" "$LOWEST_SCORE" <<'PYEOF' 2>/dev/null; then
+import sys
+exit(0 if float(sys.argv[1]) < float(sys.argv[2]) else 1)
+PYEOF
     LOWEST_SCORE="$SCORE"
   fi
 done

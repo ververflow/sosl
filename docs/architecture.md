@@ -9,16 +9,37 @@ One git commit. One or a few file modifications. Covered by contra-metric guards
 A single iteration of the optimization cycle:
 
 ```
-Run      → Claude makes one targeted change
+Detect   → Choose strategy mode: DRAFT / DEBUG / IMPROVE (based on history)
+Run      → Claude makes one targeted change (mode-specific prompt)
 Eval     → Guards check first (types, imports, build). If fail → revert immediately
 Fix      → Measure the target metric (median of N samples)
 Iterate  → If improved beyond noise floor: git commit, update baseline. Else: revert
 Test     → Contra-metric guards ran before measurement — no broken code gets scored
-Annotate → Log the experiment to JSONL for future iterations
+Annotate → Log the experiment to JSONL + update session document
 ```
 
 Note: Guards run BEFORE measurement. This prevents Goodhart gaming — broken code
 that happens to improve the metric score never reaches the commit decision.
+
+**Strategy modes** (inspired by AIDE's three-mode operator):
+- **IMPROVE**: default — incremental refinement, one targeted change
+- **DEBUG**: previous iteration hit a guard failure — fix the specific issue
+- **DRAFT**: stagnation or repeated failures — try a completely different approach
+
+Mode detection priority: high stagnation (≥4) → DRAFT, last was guard fail → DEBUG (3+ consecutive → DRAFT), "no changes" → DRAFT if repeated, default → IMPROVE.
+
+### Level 1.5: Session Memory (micro-meso bridge)
+Cross-iteration learning within a single run:
+
+```
+.sosl/session.md tracks:
+  - Strategies Tried:  what was attempted each iteration + result
+  - Dead Ends:         approaches that hit guard failures (don't retry)
+  - Key Wins:          approaches that produced improvements (build on these)
+```
+
+Session context is injected into each prompt via `{{SESSION_CONTEXT}}`. This prevents
+Claude from retrying failed approaches and encourages building on what works.
 
 ### Level 2: Self-Annealing (meso)
 Scope temperature across iterations within a single run:
@@ -67,13 +88,14 @@ Review       → Morning: 3-4 branches of improvements ready for merge
 ### directive.md
 - Markdown file with instructions for Claude
 - Must define: objective, allowed scope, forbidden scope, strategy
-- Dynamic placeholders replaced at runtime: `{{CURRENT_SCORE}}`, `{{ITERATION}}`, `{{MAX_ITERATIONS}}`, `{{RECENT_RESULTS}}`, `{{SCOPE_GUIDANCE}}`
+- Dynamic placeholders replaced at runtime: `{{CURRENT_SCORE}}`, `{{ITERATION}}`, `{{MAX_ITERATIONS}}`, `{{RECENT_RESULTS}}`, `{{SCOPE_GUIDANCE}}`, `{{SESSION_CONTEXT}}`, `{{STRATEGY_MODE}}`
 
 ## State Management
 
 SOSL is **stateless per iteration**: each Claude call is a fresh subprocess with no session memory. All state lives on disk:
 
-- `.sosl/experiments.jsonl` — append-only experiment log (survives crashes)
+- `.sosl/experiments.jsonl` — append-only experiment log with mode + strategy fields (survives crashes)
+- `.sosl/session.md` — living session document: strategies tried, dead ends, key wins (updated per iteration)
 - `.sosl/checkpoint.json` — current iteration + baseline (enables resume)
 - `.sosl/SUMMARY.md` — human-readable summary (generated after completion, both solo and parallel runs)
 - `.sosl/last-audit.txt` — top failing Lighthouse audits (injected into Claude's prompt)

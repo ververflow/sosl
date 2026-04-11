@@ -20,6 +20,8 @@ lib/
   checkpoint.sh          # save/load/clear checkpoint for crash recovery
   annotate.sh            # JSONL experiment log + summary generation
   temperature.sh         # Scope guidance: EXPLORATION → REFINEMENT → POLISHING
+  session.sh             # Living session document: tracks strategies, dead ends, key wins
+  strategy.sh            # Mode detection: DRAFT / DEBUG / IMPROVE per iteration
 domains/                 # Each domain = directive.md + measure.sh + guard.sh + optional config.sh
   performance/           # Lighthouse Performance score
   accessibility/         # Lighthouse Accessibility score
@@ -41,7 +43,14 @@ These are the interfaces that make SOSL work. Get them wrong and the loop breaks
 
 **guard.sh**: takes target dir as arg, exit 0 = safe to measure, exit 1 = revert changes (print reason to stdout). Guards run BEFORE measurement — a guard failure means the change never gets measured.
 
-**directive.md**: markdown prompt for Claude. Must contain: objective, allowed scope, forbidden scope, strategy. Uses `{{CURRENT_SCORE}}`, `{{ITERATION}}`, `{{MAX_ITERATIONS}}`, `{{RECENT_RESULTS}}`, `{{SCOPE_GUIDANCE}}` placeholders.
+**directive.md**: markdown prompt for Claude. Must contain: objective, allowed scope, forbidden scope, strategy. Uses `{{CURRENT_SCORE}}`, `{{ITERATION}}`, `{{MAX_ITERATIONS}}`, `{{RECENT_RESULTS}}`, `{{SCOPE_GUIDANCE}}`, `{{SESSION_CONTEXT}}`, `{{STRATEGY_MODE}}` placeholders.
+
+**session.md** (auto-generated): living document in `.sosl/session.md` that tracks strategies tried, dead ends, and key wins across iterations. Injected into Claude's prompt via `{{SESSION_CONTEXT}}`. Prevents retrying failed approaches.
+
+**strategy modes**: each iteration runs in one of three modes (inspired by AIDE's three-mode operator):
+- **IMPROVE**: normal incremental optimization (default)
+- **DEBUG**: previous iteration hit a guard failure — fix the specific issue
+- **DRAFT**: stagnation or repeated failures — try a completely different approach
 
 **config.sh**: optional per-domain config. Currently supports `MIN_NOISE_FLOOR` (default: 0.5, Lighthouse domains use 3.0).
 

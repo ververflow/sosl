@@ -2,6 +2,16 @@
 .sosl/
 .sosl-worktrees/
 
+# Secrets — never commit
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+serviceAccountKey.json
+
 # OS
 .DS_Store
 Thumbs.db

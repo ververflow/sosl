@@ -31,14 +31,11 @@ print(f'{round(med, 2)} {round(mad, 2)}')
 is_significant() {
   local old="$1" new="$2" noise="$3"
   local min_noise="${MIN_NOISE_FLOOR:-0.5}"
-  python3 -c "
-old, new, noise = float($old), float($new), float($noise)
-min_noise = float($min_noise)
+  python3 - "$old" "$new" "$noise" "$min_noise" <<'PYEOF'
+import sys
+old, new, noise, min_noise = (float(x) for x in sys.argv[1:5])
 threshold = max(noise * 1.5, min_noise)
 improvement = new - old
-if improvement > threshold:
-    exit(0)
-else:
-    exit(1)
-"
+exit(0 if improvement > threshold else 1)
+PYEOF
 }

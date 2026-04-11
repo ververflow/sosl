@@ -22,4 +22,7 @@ npm run build > /dev/null 2>&1 || {
 SIZE_KB=$(du -sk .next/ 2>/dev/null | awk '{print $1}')
 
 # Invert: smaller bundle = higher score (ceiling at 50000 KB)
-python3 -c "print(max(0, 50000 - int($SIZE_KB)))"
+python3 - "$SIZE_KB" <<'PYEOF'
+import sys
+print(max(0, 50000 - int(sys.argv[1])))
+PYEOF

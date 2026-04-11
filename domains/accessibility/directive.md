@@ -8,6 +8,11 @@ Current score: **{{CURRENT_SCORE}}** / 100. Target: 95+.
 - Iteration: {{ITERATION}} of {{MAX_ITERATIONS}}
 - {{SCOPE_GUIDANCE}}
 
+{{STRATEGY_MODE}}
+
+## Session History
+{{SESSION_CONTEXT}}
+
 ## Previous Experiments
 {{RECENT_RESULTS}}
 
