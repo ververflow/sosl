@@ -38,9 +38,15 @@ domains/                 # Each domain = directive.md + measure.sh + guard.sh + 
   bundle-size/           # Next.js build size (inverted)
 examples/
   nextjs-performance.conf # Example config for Next.js Lighthouse optimization
+  domains/                 # Copy-and-use example domains for any stack
+    pytest-coverage/       # Python test coverage
+    lint-score/            # Generic linting (autodetects Node/Python/Rust/Go)
+    build-speed/           # Build time optimization (any compiled project)
+    broken-links/          # Documentation link quality
 docs/
   CHANGELOG.md           # Evolution: braindump → v1 → v2 → v3 → implementation
   architecture.md        # 5-level structure (nano → micro → meso → macro → system)
+  getting-started.md     # Beginner → advanced guide (5 levels)
   writing-directives.md  # How to write effective optimization prompts
   adding-domains.md      # How to create custom domains
 ```

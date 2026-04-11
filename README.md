@@ -44,46 +44,43 @@ SOSL isn't just a loop around Claude. It incorporates patterns from the autorese
 - Python 3.8+ (stdlib only)
 - Git
 
-All scripts are invoked with `bash sosl.sh` syntax -- no `chmod +x` needed.
-
-### Setup
+### 5-Minute First Run
 
 ```bash
-# 1. Clone SOSL
+# Clone SOSL
 git clone https://github.com/ververflow/sosl.git
-cd sosl
 
-# 2. Verify it works
-bash sosl.sh --help
-source lib/confidence.sh && calculate_stats 58 60 57 59 61
-# Should print: 59.0 1.0
-```
-
-### Run on your project
-
-```bash
-# 3. Start your project's dev servers (SOSL measures against localhost)
-
-# 4. Dry-run first (no Claude calls, just prints prompts)
-bash sosl.sh \
-  --domain domains/code-quality \
-  --target /path/to/your-app \
+# Dry-run on your project (no Claude calls, shows what SOSL would do)
+bash sosl/sosl.sh \
+  --domain sosl/examples/domains/lint-score \
+  --target /path/to/your-project \
   --max-iterations 3 \
   --dry-run
 
-# 5. Real run (start small -- 3 iterations)
-bash sosl.sh \
-  --domain domains/code-quality \
-  --target /path/to/your-app \
+# Real run (3 iterations = ~5-15 minutes, ~$1-3 Claude API cost)
+bash sosl/sosl.sh \
+  --domain sosl/examples/domains/lint-score \
+  --target /path/to/your-project \
   --max-iterations 3
-
-# 6. Or use tree search for smarter exploration
-bash sosl.sh \
-  --domain domains/code-quality \
-  --target /path/to/your-app \
-  --search tree \
-  --max-iterations 20
 ```
+
+The `lint-score` domain auto-detects your stack (Node, Python, Rust, Go) and measures linting errors. No configuration needed.
+
+### Apply to Any Project
+
+The only thing SOSL needs is a measurable metric. Create three files:
+
+```bash
+mkdir -p your-project/.sosl/domains/my-metric
+
+# measure.sh: print ONE number (higher = better)
+# guard.sh:   exit 0 if code works, exit 1 if broken
+# directive.md: tell Claude what to optimize
+
+bash sosl/sosl.sh --domain your-project/.sosl/domains/my-metric --target your-project
+```
+
+**See [Getting Started Guide](docs/getting-started.md)** for step-by-step instructions from beginner to advanced, including overnight runs, tree search, multi-domain optimization, and branch finalization.
 
 ### After a run
 
@@ -114,54 +111,44 @@ git checkout main && git merge sosl/<domain>/<timestamp>
 
 **Start with `code-quality`, not `performance`.** Deterministic metrics beat noisy ones -- ESLint produces exact counts while Lighthouse varies 20-30 points on the same code.
 
+## Example Domains (copy and use)
+
+| Domain | Stack | What it measures | Use for |
+|--------|-------|------------------|---------|
+| **lint-score** | Any (autodetect) | Lint errors | Code cleanup on any project |
+| **pytest-coverage** | Python | Test coverage % | Improving Python test suites |
+| **build-speed** | Any (autodetect) | Build time | Faster compilation/bundling |
+| **broken-links** | Docs/Markdown | Broken links | Documentation quality |
+| **code-quality** | JS/TS | ESLint errors | JavaScript/TypeScript cleanup |
+| **performance** | Next.js | Lighthouse score | Web performance |
+| **accessibility** | Next.js | Lighthouse a11y | WCAG compliance |
+| **bundle-size** | Next.js | Build output size | Smaller bundles |
+
+```bash
+# Use an example directly:
+bash sosl/sosl.sh --domain sosl/examples/domains/lint-score --target /path/to/project
+
+# Or copy to your project and customize:
+cp -r sosl/examples/domains/pytest-coverage your-project/.sosl/domains/test-coverage
+# Edit the directive.md for your specific project, then:
+bash sosl/sosl.sh --domain your-project/.sosl/domains/test-coverage --target your-project
+```
+
 ## Custom Domains
 
-SOSL works with **any measurable metric** on **any stack**. Create a domain in 3 files:
+SOSL works with **any measurable metric** on **any stack**. Create 3 files in your project:
 
 ```
-domains/your-domain/
-  directive.md    # What to optimize and what's off-limits
-  measure.sh      # Must print a single number (higher = better)
-  guard.sh        # Must exit 0 if safe, exit 1 if not
+your-project/.sosl/domains/my-metric/
+  measure.sh      # Print ONE number to stdout (higher = better)
+  guard.sh        # Exit 0 if safe, exit 1 if broken
+  directive.md    # Tell Claude what to optimize and what's off-limits
   config.sh       # Optional: noise floor, allowed paths, secondary metrics
 ```
 
-Or drop them in your target repo at `.sosl/domains/your-domain/` -- SOSL checks there first (no forking needed).
+SOSL checks your project's `.sosl/domains/` first, then falls back to built-in domains. No forking needed.
 
-**measure.sh** contract:
-```bash
-#!/bin/bash
-set -euo pipefail
-TARGET_DIR="${1:-.}"
-# Your measurement here -- must print ONE number to stdout
-echo "42.5"
-```
-
-**guard.sh** contract:
-```bash
-#!/bin/bash
-set -euo pipefail
-TARGET_DIR="${1:-.}"
-cd "$TARGET_DIR" && npm test || { echo "GUARD FAIL: tests broke"; exit 1; }
-echo "GUARD PASS"
-```
-
-See [docs/adding-domains.md](docs/adding-domains.md) for the full guide and [docs/writing-directives.md](docs/writing-directives.md) for prompt tips.
-
-### Example: Python test pass rate
-
-```bash
-# .sosl/domains/pytest-score/measure.sh
-#!/bin/bash
-set -euo pipefail
-cd "${1:-.}"
-result=$(python -m pytest --tb=no -q 2>&1 | tail -1)
-passed=$(echo "$result" | grep -oP '\d+(?= passed)' || echo 0)
-failed=$(echo "$result" | grep -oP '\d+(?= failed)' || echo 0)
-total=$((passed + failed))
-[[ $total -eq 0 ]] && echo 0 && exit 0
-echo "scale=1; $passed * 100 / $total" | bc
-```
+See [docs/adding-domains.md](docs/adding-domains.md) for the full guide, [docs/writing-directives.md](docs/writing-directives.md) for prompt tips, and [docs/getting-started.md](docs/getting-started.md) for step-by-step walkthroughs from beginner to advanced.
 
 ## Configuration
 
