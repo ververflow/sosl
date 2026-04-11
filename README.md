@@ -119,6 +119,7 @@ git checkout main && git merge sosl/<domain>/<timestamp>
 | **pytest-coverage** | Python | Test coverage % | Improving Python test suites |
 | **build-speed** | Any (autodetect) | Build time | Faster compilation/bundling |
 | **broken-links** | Docs/Markdown | Broken links | Documentation quality |
+| **skill-quality** | Claude Code skills | Structural quality | Improving AI skill prompts |
 | **code-quality** | JS/TS | ESLint errors | JavaScript/TypeScript cleanup |
 | **performance** | Next.js | Lighthouse score | Web performance |
 | **accessibility** | Next.js | Lighthouse a11y | WCAG compliance |

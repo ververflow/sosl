@@ -255,12 +255,131 @@ git merge sosl/my-metric/<timestamp>-final-1
 
 ---
 
+## Level 6: Optimizing Non-Code Content
+
+SOSL works on anything in files -- not just software code. Prompts, skills, configs, documentation, and data pipelines can all be optimized if you can measure quality with a number.
+
+### The Pattern: Wrap in a Temp Git Repo
+
+Content that doesn't live in a git repo (like Claude Code skills, standalone configs, or prompt files) needs a thin wrapper:
+
+```bash
+# 1. Create a temp git repo with your content
+mkdir -p /tmp/optimize-target
+cp -r ~/.claude/skills/my-skill/* /tmp/optimize-target/
+cd /tmp/optimize-target && git init && git add -A && git commit -m "baseline"
+
+# 2. Run SOSL
+bash /path/to/sosl/sosl.sh \
+  --domain /path/to/sosl/examples/domains/skill-quality \
+  --target /tmp/optimize-target \
+  --max-iterations 5
+
+# 3. Review
+cat .sosl/JUDGE_REPORT.md
+git diff main..sosl/skill-quality/*
+
+# 4. Copy back if satisfied
+cp SKILL.md ~/.claude/skills/my-skill/SKILL.md
+```
+
+### Example: Optimize a Claude Code Skill
+
+Claude Code skills are markdown files with YAML frontmatter. SOSL's `skill-quality` domain scores them on structure (5pts), clarity (5pts), completeness (5pts), and frontmatter (5pts).
+
+```bash
+# Copy skill to workspace
+mkdir -p /tmp/skill-opt && cd /tmp/skill-opt
+cp ~/.claude/skills/my-skill/SKILL.md .
+git init && git add -A && git commit -m "baseline"
+
+# Check current score
+bash /path/to/sosl/examples/domains/skill-quality/measure.sh .
+# Output: 12 (out of 20)
+
+# Run SOSL to improve it
+bash /path/to/sosl/sosl.sh \
+  --domain /path/to/sosl/examples/domains/skill-quality \
+  --target . \
+  --max-iterations 5
+
+# Score should be higher now
+bash /path/to/sosl/examples/domains/skill-quality/measure.sh .
+# Output: 18 (out of 20)
+```
+
+### Example: Optimize Configuration Files
+
+```bash
+# Webpack config → measure build size
+mkdir -p /tmp/config-opt && cd /tmp/config-opt
+cp /path/to/project/webpack.config.js .
+git init && git add -A && git commit -m "baseline"
+
+# Use build-speed or a custom domain
+bash /path/to/sosl/sosl.sh \
+  --domain /path/to/sosl/examples/domains/build-speed \
+  --target . \
+  --max-iterations 5
+```
+
+### Example: Optimize Prompts / Templates
+
+For prompt optimization, create a custom measure.sh that:
+1. Runs the prompt through Claude with test inputs
+2. Scores the output against binary eval criteria
+3. Returns the score
+
+```bash
+# measure.sh for a prompt
+#!/bin/bash
+set -euo pipefail
+cd "${1:-.}"
+
+# Run prompt with 3 test cases, score each
+score=$(python3 -c "
+import subprocess, json
+
+prompt = open('prompt.md').read()
+tests = ['test input 1', 'test input 2', 'test input 3']
+total = 0
+
+for test in tests:
+    r = subprocess.run(
+        ['claude', '-p', f'{prompt}\n\nInput: {test}'],
+        capture_output=True, text=True, timeout=60)
+    out = r.stdout
+    # Binary criteria (each yes = 1 point)
+    total += int(len(out) > 50)        # substantial output
+    total += int(len(out) < 2000)      # not runaway
+    total += int('error' not in out.lower())  # no error messages
+
+print(total)  # max = 9 (3 criteria x 3 tests)
+")
+echo "$score"
+```
+
+Note: dynamic prompt testing uses Claude API calls for measurement, so costs ~$0.50-2 per iteration. Use `--samples 1` to minimize measurement cost.
+
+### When to Use This Pattern
+
+| Content type | Measure with | Cost |
+|-------------|-------------|------|
+| Claude skills | `skill-quality` domain (static) | Free |
+| Prompts/templates | Custom eval with Claude calls | ~$1/iteration |
+| Config files | Build speed or output quality | Free (build) |
+| Documentation | `broken-links` domain | Free |
+| Data pipelines | Processing time or output quality | Varies |
+
+---
+
 ## Example Domains (copy and adapt)
 
 SOSL ships with ready-to-use example domains:
 
 | Domain | Stack | Metric | Copy from |
 |--------|-------|--------|-----------|
+| **skill-quality** | Claude skills | Structural quality score | `examples/domains/skill-quality/` |
 | **pytest-coverage** | Python | Test coverage % | `examples/domains/pytest-coverage/` |
 | **lint-score** | Any (autodetect) | Lint errors (inverted) | `examples/domains/lint-score/` |
 | **build-speed** | Any (autodetect) | Build time (inverted) | `examples/domains/build-speed/` |
