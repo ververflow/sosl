@@ -1,43 +1,40 @@
-# SOSL — Self-Optimizing Software Loop
+# SOSL -- Self-Optimizing Software Loop
 
 > Point an AI agent at a metric. Go to sleep. Wake up with improvements.
 
-SOSL translates [Karpathy's autoresearch pattern](https://github.com/karpathy/autoresearch) from ML training to **software applications**. It runs Claude Code in an autonomous loop overnight, measures a specific quality metric after each change, commits improvements, and reverts regressions — so your software gets better while you sleep.
+SOSL translates [Karpathy's autoresearch pattern](https://github.com/karpathy/autoresearch) from ML training to **software applications**. It runs Claude Code in an autonomous loop, measures a specific quality metric after each change, commits improvements, and reverts regressions -- so your software gets better while you sleep.
 
 ## How it Works
 
 ```
 You write:     directive.md  (what to optimize, what's off-limits)
-               measure.sh   (outputs a single score — higher = better)
+               measure.sh   (outputs a single score -- higher = better)
                guard.sh     (smoke tests that must pass)
 
-SOSL runs:     ┌──────────────────────────────────────┐
-               │  1. Measure baseline (median of 5)    │
-               │  2. Claude makes ONE targeted change  │
-               │  3. Guards check (types, imports, etc)│
-               │  4. Re-measure (median of 5)          │
-               │  5. Improved beyond noise floor?       │
-               │     Yes → git commit                  │
-               │     No  → git revert                  │
-               │  6. Repeat until done                 │
-               └──────────────────────────────────────┘
+SOSL runs:     1. Measure baseline (median of 5)
+               2. Claude makes ONE targeted change
+               3. Guards check (types, imports, build)
+               4. Re-measure (median of 5)
+               5. Improved beyond noise floor? Commit. Otherwise revert.
+               6. Update session memory (what worked, what failed)
+               7. Repeat -- with learning from previous iterations
 
-You review:    A git branch full of validated improvements.
+You review:    A git branch full of validated improvements + a Judge report.
 ```
 
-This is the **REFITA loop**: **R**un → **E**val → **F**ix → **I**terate → **T**est → **A**nnotate.
+## What Makes SOSL Different
 
-## Features
+SOSL isn't just a loop around Claude. It incorporates patterns from the autoresearch ecosystem:
 
-- **Git ratchet** — only improvements survive; regressions are reverted instantly
-- **Statistical confidence** — median of 5 measurements with MAD-based noise floor; no committing measurement noise
-- **Contra-metric guards** — prevent [Goodhart's Law](https://en.wikipedia.org/wiki/Goodhart%27s_law) gaming (e.g., can't improve perf by deleting features)
-- **Dangling import detection** — catches Claude's most common failure: referencing files it never created
-- **Scope temperature** — early iterations explore boldly, later iterations polish carefully
-- **Crash recovery** — JSONL experiment log + checkpoints; resume interrupted runs
-- **Parallel domains** — optimize performance, accessibility, code quality, and bundle size simultaneously via git worktrees
-- **Zero dependencies** — pure bash + python3 (stdlib only); no npm/pip install for the framework itself
-- **Windows compatible** — works in Git Bash on Windows (path conversion, no jq/bc dependency)
+| Feature | Inspired by | What it does |
+|---------|-------------|-------------|
+| **Session memory** | [pi-autoresearch](https://github.com/davebcn87/pi-autoresearch) | Tracks strategies tried, dead ends, key wins across iterations |
+| **Strategy modes** | [AIDE/Weco](https://github.com/WecoAI/weco-cli) | DRAFT / DEBUG / IMPROVE -- different situations get different prompts |
+| **Tree search** | [AIDE](https://arxiv.org/abs/2502.13138) | Greedy best-first exploration -- backtrack when stuck instead of stopping |
+| **Judge Agent** | autoresearch ecosystem | Fresh-context Claude reviews all commits before you merge |
+| **Secondary metrics** | AIDE + pi-autoresearch | Cross-domain tradeoff monitoring (Goodhart's Law defense) |
+| **Contra-metric guards** | [Ralph](https://github.com/frankbria/ralph-claude-code) | Prevent metric gaming -- broken code that improves the score gets caught |
+| **Statistical confidence** | pi-autoresearch | MAD-based noise floor -- only commits real improvements, not measurement noise |
 
 ## Quick Start
 
@@ -46,9 +43,8 @@ This is the **REFITA loop**: **R**un → **E**val → **F**ix → **I**terate �
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`claude` command available)
 - Python 3.8+ (stdlib only)
 - Git
-- Node.js (for Lighthouse/ESLint domains)
 
-All scripts are invoked with `bash sosl.sh` syntax — no `chmod +x` needed.
+All scripts are invoked with `bash sosl.sh` syntax -- no `chmod +x` needed.
 
 ### Setup
 
@@ -66,56 +62,30 @@ source lib/confidence.sh && calculate_stats 58 60 57 59 61
 ### Run on your project
 
 ```bash
-# 3. Start your project's dev servers
-#    SOSL measures against localhost — your app must be running
+# 3. Start your project's dev servers (SOSL measures against localhost)
 
 # 4. Dry-run first (no Claude calls, just prints prompts)
 bash sosl.sh \
-  --domain domains/performance \
-  --target /path/to/your-nextjs-app \
+  --domain domains/code-quality \
+  --target /path/to/your-app \
   --max-iterations 3 \
   --dry-run
 
-# 5. Real run (start small — 3 iterations)
+# 5. Real run (start small -- 3 iterations)
 bash sosl.sh \
-  --domain domains/performance \
-  --target /path/to/your-nextjs-app \
-  --health-check http://localhost:3000 \
+  --domain domains/code-quality \
+  --target /path/to/your-app \
   --max-iterations 3
 
-# 6. Review what SOSL did
-cd /path/to/your-nextjs-app
-git log --oneline sosl/performance/*
-git diff main..sosl/performance/<timestamp>
-
-# 7. If satisfied, scale up (overnight run)
+# 6. Or use tree search for smarter exploration
 bash sosl.sh \
-  --domain domains/performance \
-  --target /path/to/your-nextjs-app \
-  --health-check http://localhost:3000 \
-  --max-iterations 30 \
-  --max-hours 8 \
-  --max-cost 20.00
+  --domain domains/code-quality \
+  --target /path/to/your-app \
+  --search tree \
+  --max-iterations 20
 ```
 
-### Where SOSL writes
-
-SOSL writes everything into **your project**, not into the SOSL repo:
-
-```
-your-project/                          ← the repo you pointed --target at
-├── .sosl/
-│   ├── experiments.jsonl              ← log of all iterations (tried, scores, costs)
-│   └── checkpoint.json                ← crash recovery (deleted after clean exit)
-├── main                               ← UNTOUCHED — SOSL never commits to main
-└── sosl/<domain>/<timestamp>          ← branch with validated improvement commits
-```
-
-The SOSL framework itself is never modified by a run — it's a tool you point at projects.
-
-### After each run
-
-Review and decide:
+### After a run
 
 ```bash
 cd /path/to/your-project
@@ -123,43 +93,47 @@ cd /path/to/your-project
 # See what SOSL committed
 git log --oneline sosl/<domain>/*
 
+# Read the Judge's review
+cat .sosl/JUDGE_REPORT.md
+
 # Full diff against main
 git diff main..sosl/<domain>/<timestamp>
 
 # Merge if satisfied
 git checkout main && git merge sosl/<domain>/<timestamp>
-
-# Or delete if not
-git branch -D sosl/<domain>/<timestamp>
 ```
 
 ## Built-in Domains
 
-| Domain | Metric | Guard | Best for |
+| Domain | Metric | Stack | Best for |
 |--------|--------|-------|----------|
-| `performance` | Lighthouse Performance (0-100) | TypeScript + imports + build | Next.js/React apps |
-| `accessibility` | Lighthouse Accessibility (0-100) | TypeScript | Any web app |
-| `code-quality` | ESLint errors (inverted) | TypeScript + Vitest | Any TS/JS project |
-| `bundle-size` | .next build size (inverted) | Build success + page count | Next.js apps |
+| `performance` | Lighthouse Performance (0-100) | Next.js | Web app speed |
+| `accessibility` | Lighthouse Accessibility (0-100) | Next.js | WCAG compliance |
+| `code-quality` | ESLint errors (inverted) | Any JS/TS | Code cleanup |
+| `bundle-size` | .next build size (inverted) | Next.js | Smaller bundles |
+
+**Start with `code-quality`, not `performance`.** Deterministic metrics beat noisy ones -- ESLint produces exact counts while Lighthouse varies 20-30 points on the same code.
 
 ## Custom Domains
 
-Create a new domain in 3 files:
+SOSL works with **any measurable metric** on **any stack**. Create a domain in 3 files:
 
 ```
 domains/your-domain/
-├── directive.md    # What to optimize and what's off-limits
-├── measure.sh      # Must print a single number (higher = better)
-├── guard.sh        # Must exit 0 if safe, exit 1 if not
-└── config.sh       # Optional: MIN_NOISE_FLOOR, other settings
+  directive.md    # What to optimize and what's off-limits
+  measure.sh      # Must print a single number (higher = better)
+  guard.sh        # Must exit 0 if safe, exit 1 if not
+  config.sh       # Optional: noise floor, allowed paths, secondary metrics
 ```
+
+Or drop them in your target repo at `.sosl/domains/your-domain/` -- SOSL checks there first (no forking needed).
 
 **measure.sh** contract:
 ```bash
 #!/bin/bash
 set -euo pipefail
 TARGET_DIR="${1:-.}"
-# Your measurement here — must print ONE number to stdout
+# Your measurement here -- must print ONE number to stdout
 echo "42.5"
 ```
 
@@ -168,30 +142,142 @@ echo "42.5"
 #!/bin/bash
 set -euo pipefail
 TARGET_DIR="${1:-.}"
-# Your checks here — exit 1 with reason to revert changes
 cd "$TARGET_DIR" && npm test || { echo "GUARD FAIL: tests broke"; exit 1; }
 echo "GUARD PASS"
 ```
 
 See [docs/adding-domains.md](docs/adding-domains.md) for the full guide and [docs/writing-directives.md](docs/writing-directives.md) for prompt tips.
 
+### Example: Python test pass rate
+
+```bash
+# .sosl/domains/pytest-score/measure.sh
+#!/bin/bash
+set -euo pipefail
+cd "${1:-.}"
+result=$(python -m pytest --tb=no -q 2>&1 | tail -1)
+passed=$(echo "$result" | grep -oP '\d+(?= passed)' || echo 0)
+failed=$(echo "$result" | grep -oP '\d+(?= failed)' || echo 0)
+total=$((passed + failed))
+[[ $total -eq 0 ]] && echo 0 && exit 0
+echo "scale=1; $passed * 100 / $total" | bc
+```
+
 ## Configuration
 
 ```bash
-# All flags
 bash sosl.sh \
-  --domain domains/performance \   # Required: which domain
-  --target /path/to/repo \         # Required: repo to optimize
-  --config examples/template.conf \ # Optional: load from file
-  --max-iterations 50 \            # Default: 50
-  --max-hours 10 \                 # Default: 10
-  --max-cost 25.00 \               # Default: 25.00 USD
-  --budget-per-iter 1.00 \         # Default: 1.00 USD per Claude call
-  --samples 5 \                    # Default: 5 (measurements per eval)
-  --model claude-sonnet-4-5 \      # Default: claude-sonnet-4-5
-  --health-check http://localhost:3000 \  # Optional: URL check before start
-  --resume \                       # Resume from checkpoint
-  --dry-run                        # Print prompts, don't call Claude
+  --domain domains/code-quality \    # Required: which domain
+  --target /path/to/repo \           # Required: repo to optimize
+  --search tree \                    # Search: linear (default) or tree (greedy best-first)
+  --max-children 3 \                 # Tree: max attempts per node (default: 3)
+  --max-depth 5 \                    # Tree: max tree depth (default: 5)
+  --max-iterations 50 \              # Max iterations (default: 50)
+  --max-hours 10 \                   # Max wall-clock hours (default: 10)
+  --max-cost 25.00 \                 # Max total USD (default: 25.00)
+  --budget-per-iter 1.00 \           # Max per Claude call (default: 1.00)
+  --samples 5 \                      # Measurements per eval (default: 5)
+  --model claude-sonnet-4-5 \        # Claude model (default: claude-sonnet-4-5)
+  --health-check http://localhost:3000 \
+  --no-judge \                       # Skip post-loop Judge review
+  --config examples/template.conf \  # Load from config file
+  --resume \                         # Resume from checkpoint
+  --dry-run                          # Print prompts, don't call Claude
+```
+
+## Search Modes
+
+### Linear (default)
+
+Sequential optimization: each iteration builds on the last. Stops when stagnation hits.
+
+```
+root -> A -> B -> C -> stall -> STOP
+```
+
+### Tree (`--search tree`)
+
+Greedy best-first search: when an approach stalls, backtrack to a previous promising state and try a different direction. AIDE research reports 4x improvement over linear.
+
+```
+root -> A -> B -> stall -> backtrack to A -> D -> E -> ...
+```
+
+Each successful commit becomes a node. The frontier is all expandable leaves. SOSL always expands the highest-scoring node.
+
+After a tree run, SOSL prints an ASCII visualization:
+
+```
+root [62.3] "baseline" (2 failed) *
+|-- n1 [65.1] "Removed imports" *
+|   `-- n3 [67.2] "Dynamic imports" *
+`-- n2 [61.0] "Code splitting"
+
+* = best path
+```
+
+## Intelligence Layers
+
+### Session Memory
+
+SOSL maintains a living session document (`.sosl/session.md`) that tracks:
+- **Strategies Tried**: what was attempted each iteration + result
+- **Dead Ends**: approaches that hit guard failures (injected as "do NOT retry")
+- **Key Wins**: approaches that produced improvements (injected as "build on these")
+
+Claude sees this context in every prompt. No more retrying failed approaches.
+
+### Strategy Modes
+
+Each iteration runs in one of three modes (inspired by AIDE's three-mode operator):
+
+| Mode | When | Prompt strategy |
+|------|------|-----------------|
+| **IMPROVE** | Normal case | Incremental refinement, one targeted change |
+| **DEBUG** | Last iteration hit a guard failure | Fix the specific issue, keep the approach |
+| **DRAFT** | Stagnation or repeated failures | Try a completely different approach |
+
+### Scope Temperature
+
+Early iterations explore boldly (EXPLORATION), middle iterations refine (REFINEMENT), late iterations polish (POLISHING).
+
+## Safety Layers
+
+1. **Git branch isolation** -- never touches main
+2. **Three-layer guards** -- universal (file count, scope, deletions) + stack-specific (auto-detected: Node/Python/Rust/Go) + domain-specific (tsc, build, tests)
+3. **Statistical confidence** -- median of 5 samples with MAD-based noise floor
+4. **Circuit breakers** -- time limit, cost limit, stagnation (linear) or exhausted frontier (tree)
+5. **Tool whitelist** -- Claude gets Read, Edit, Write, Glob, Grep, and scoped Bash only
+6. **Judge Agent** -- fresh-context Claude reviews all commits before merge
+7. **Secondary metrics** -- cross-domain tradeoff monitoring (Goodhart's Law defense)
+8. **Measurement timeout** -- measure.sh calls timeout after 120s
+
+### Stack-Aware Guards
+
+SOSL auto-detects your stack and applies appropriate checks:
+
+| Stack | Detected by | Suppression check | Dependency check | Test patterns |
+|-------|-------------|-------------------|------------------|---------------|
+| Node/TS | package.json | eslint-disable, ts-ignore | package.json | .test., .spec., e2e/ |
+| Python | pyproject.toml | # noqa, # type: ignore | pyproject.toml, requirements.txt | test_*.py, _test.py |
+| Rust | Cargo.toml | #[allow(...)] | Cargo.toml | tests/, _test.rs |
+| Go | go.mod | //nolint | go.mod | _test.go |
+
+## Where SOSL Writes
+
+SOSL writes everything into **your project**, not into the SOSL repo:
+
+```
+your-project/
+  .sosl/
+    experiments.jsonl      # Log of all iterations (tried, scores, costs, strategies)
+    session.md             # Living session: strategies, dead ends, wins
+    tree.json              # Tree search state (--search tree only)
+    SUMMARY.md             # Human-readable run summary
+    JUDGE_REPORT.md        # Judge Agent's review + verdict
+    checkpoint.json        # Crash recovery (deleted after clean exit)
+  main                     # UNTOUCHED -- SOSL never commits to main
+  sosl/<domain>/<timestamp>  # Branch with validated commits
 ```
 
 ## Parallel Optimization
@@ -213,50 +299,32 @@ SOSL operates on 5 levels:
 | Level | What | Scope |
 |-------|------|-------|
 | **Nano** | Atomic change | One git commit |
-| **Micro** | REFITA loop | Single iteration: measure → change → verify → commit/revert |
-| **Meso** | Self-annealing | Scope temperature: explore → refine → polish |
-| **Macro** | SOSL night run | One domain, one branch, hours of autonomous optimization |
+| **Micro** | REFITA loop | Detect mode -> change -> guard -> measure -> commit/revert -> annotate |
+| **Micro+** | Session memory | Cross-iteration learning: strategies, dead ends, wins |
+| **Meso** | Self-annealing | Scope temperature + tree search (backtracking, branching) |
+| **Macro** | Night run | One domain, hours of autonomous optimization + Judge review |
 | **System** | Parallel SOSL | Multiple domains via worktrees |
 
 See [docs/architecture.md](docs/architecture.md) for the full breakdown.
-
-## Which Domain to Start With
-
-**Start with `code-quality`, not `performance`.**
-
-The single most important factor for SOSL success is **metric determinism**. The same code should produce the same score every time. Here's how the built-in domains compare:
-
-| Domain | Deterministic? | Noise | Recommended for first run? |
-|--------|---------------|-------|----------------------------|
-| `code-quality` | Yes — ESLint count is exact | 0 points | **Yes** — best first domain |
-| `bundle-size` | Yes — build output is exact | 0 points | Yes (but slow — full build per sample) |
-| `accessibility` | Mostly — Lighthouse a11y is stable | ~2 points | After code-quality |
-| `performance` | No — Lighthouse perf varies heavily | 3-29 points | Last — requires warm server, high noise floor |
-
-**Why this matters:** With a noisy metric, SOSL can't distinguish real improvements from measurement noise. Our first run on Lighthouse performance "improved" the score by 27 points — but A/B testing showed zero actual difference. The score fluctuated based on system load, not code quality.
-
-With `code-quality` (ESLint), every committed change is a real fix. Zero false positives. In our test run: 4 of 5 iterations produced correct, mergeable commits (unused variable removal, useMemo fix, exhaustive-deps fix).
-
-**The core principle:** the strength of the entire system depends on how sharp and reliable the measurement is. A perfect loop with a noisy metric produces garbage. A simple loop with a deterministic metric produces real value.
 
 ## Lessons from Production Use
 
 SOSL has been tested on [HoutCalc](https://houtcalc.nl) (Next.js 16 + FastAPI SaaS). Key findings:
 
-- **Guards are the product, not the loop.** The loop is trivial. The guards determine whether SOSL commits good code or broken code. Invest time in guards first.
-- **Goodhart's Law manifests immediately.** First run: Lighthouse score improved because a broken import meant less JavaScript loaded. The "improvement" was actually broken code. Contra-metric guards (TypeScript check, import resolution, build check) caught this after we hardened them.
-- **Lighthouse on dev servers is noisy.** Scores varied 29 points on the same code. Fixed with 5 samples + MIN_NOISE_FLOOR=3.0. Variance dropped to 3 points.
-- **Claude creates incomplete refactors.** It will move code to a new file but forget to create the file. The dangling import detector in `lib/guard.sh` catches this.
-- **Deterministic metrics beat noisy metrics.** `code-quality` (ESLint) produced 4 correct commits in 5 iterations. `performance` (Lighthouse) produced 0 real improvements in 5 iterations despite "improving" the score. Start with what you can measure reliably.
+- **Guards are the product, not the loop.** The loop is trivial. The guards determine whether SOSL commits good code or broken code.
+- **Goodhart's Law manifests immediately.** First run: Lighthouse score improved because a broken import meant less JS. Secondary metrics and Judge Agent now catch this.
+- **Deterministic metrics beat noisy metrics.** `code-quality` (ESLint) produced 4 correct commits in 5 iterations. `performance` (Lighthouse) produced 0 real improvements in 5 despite "improving" the score.
+- **Session memory prevents loops.** Without it, Claude retries the same failed approach because each iteration starts blind. With dead end tracking, hit rate improved significantly.
+- **Tree search beats linear when stuck.** Linear stops at stagnation. Tree backtracks and tries a different path from a promising ancestor node.
 
 ## Born From
 
 SOSL builds on the shoulders of:
-- [karpathy/autoresearch](https://github.com/karpathy/autoresearch) — the original autonomous experiment loop
-- [frankbria/ralph-claude-code](https://github.com/frankbria/ralph-claude-code) — intelligent exit detection for Claude Code loops
-- [davebcn87/pi-autoresearch](https://github.com/davebcn87/pi-autoresearch) — statistical confidence scoring for software metrics
-- [WecoAI/weco-cli](https://github.com/WecoAI/weco-cli) — decoupled evaluation framework
+- [karpathy/autoresearch](https://github.com/karpathy/autoresearch) -- the original autonomous experiment loop
+- [frankbria/ralph-claude-code](https://github.com/frankbria/ralph-claude-code) -- intelligent exit detection for Claude Code loops
+- [davebcn87/pi-autoresearch](https://github.com/davebcn87/pi-autoresearch) -- statistical confidence scoring, session persistence
+- [WecoAI/weco-cli](https://github.com/WecoAI/weco-cli) -- tree search algorithm (AIDE), decoupled evaluation
 
 ## License
 
-MIT — [VerverFlow Innovations](https://ververflow.nl)
+MIT -- [VerverFlow Innovations](https://ververflow.nl)
