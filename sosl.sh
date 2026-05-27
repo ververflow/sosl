@@ -511,9 +511,7 @@ except Exception:
 
     # Secondary metrics check (after commit, informational only)
     if [[ -n "${SECONDARY_DOMAINS:-}" ]]; then
-      local sec_after
       sec_after=$(measure_secondary "$SCRIPT_DIR" "$SECONDARY_DOMAINS" "$WORK_DIR")
-      local sec_comparison
       sec_comparison=$(compare_secondary "$SECONDARY_BEFORE" "$sec_after")
       if has_warnings "$sec_comparison"; then
         log_warn "Tradeoff: $(format_secondary "$sec_comparison")"
