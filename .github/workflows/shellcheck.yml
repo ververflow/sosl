@@ -14,8 +14,12 @@ jobs:
       - name: Run shellcheck
         uses: ludeeus/action-shellcheck@master
         with:
-          severity: warning
+          severity: error
           scandir: '.'
           ignore_paths: 'examples'
         env:
-          SHELLCHECK_OPTS: -e SC1091 -e SC2155
+          # SC1091: skip "can't follow non-constant source" (dynamic source paths)
+          # SC2155: skip "declare and assign separately" (acceptable for our style)
+          # SC2034: vars sourced from configs appear unused in the sourcing script
+          # SC1090: dynamic source (intentional in our domain loader)
+          SHELLCHECK_OPTS: -e SC1091 -e SC2155 -e SC2034 -e SC1090

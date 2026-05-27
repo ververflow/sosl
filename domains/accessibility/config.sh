@@ -1,3 +1,5 @@
+# shellcheck shell=bash
+# shellcheck disable=SC2034  # vars consumed by sourcing scripts
 # SOSL Domain Config: Accessibility
 # Lighthouse a11y is more stable than perf, but still noisy
 MIN_NOISE_FLOOR=3.0

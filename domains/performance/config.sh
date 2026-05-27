@@ -1,3 +1,5 @@
+# shellcheck shell=bash
+# shellcheck disable=SC2034  # vars consumed by sourcing scripts
 # SOSL Domain Config: Performance
 # Lighthouse scores on dev servers vary 20-30 points — high minimum noise floor
 MIN_NOISE_FLOOR=3.0
