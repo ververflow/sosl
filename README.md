@@ -1,5 +1,8 @@
 # SOSL — Self-Optimizing System Loop
 
+[![shellcheck](https://github.com/ververflow/sosl/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/ververflow/sosl/actions/workflows/shellcheck.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > Point an AI agent at a metric. Go to sleep. Wake up with improvements.
 
 SOSL translates [Karpathy's autoresearch pattern](https://github.com/karpathy/autoresearch) from ML training to **any system with a measurable metric** -- software, prompts, configs, documentation, data pipelines. It runs Claude Code in an autonomous loop, measures a quality metric after each change, commits improvements, and reverts regressions.
