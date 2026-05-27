@@ -127,7 +127,7 @@ Without session memory, Claude retries the same failed approach because it has n
 
 ## v0.2.0 — Post-Audit Hardening (April 8, 2026)
 
-Tested on HoutCalc (Next.js 16 + FastAPI SaaS). Two runs exposed critical issues, all fixed.
+Tested on a Next.js 16 + FastAPI SaaS. Two runs exposed critical issues, all fixed.
 
 ### What changed
 - **Windows path resolution**: Git Bash `/c/Dev/` → `cygpath -w` → `C:\Dev\` for Python. Experiment log and checkpoints now work on Windows.
@@ -160,7 +160,7 @@ Initial working implementation of the SOSL framework.
 - State persistence with checkpoint/resume
 - JSONL experiment logging
 - Parallel orchestrator via git worktrees
-- HoutCalc example config
+- Next.js example config
 
 ### Key design decisions made during implementation
 - **External bash loop over Claude /loop**: `/loop` dies with the session; external loop survives and supports resume

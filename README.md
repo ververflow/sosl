@@ -294,7 +294,7 @@ See [docs/architecture.md](docs/architecture.md) for the full breakdown.
 
 ## Lessons from Production Use
 
-SOSL has been tested on [HoutCalc](https://houtcalc.nl) (Next.js 16 + FastAPI SaaS). Key findings:
+SOSL has been tested on a Next.js 16 + FastAPI SaaS. Key findings:
 
 - **Guards are the product, not the loop.** The loop is trivial. The guards determine whether SOSL commits good code or broken code.
 - **Goodhart's Law manifests immediately.** First run: Lighthouse score improved because a broken import meant less JS. Secondary metrics and Judge Agent now catch this.
