@@ -315,4 +315,4 @@ SOSL builds on the shoulders of:
 
 ## License
 
-MIT -- [VerverFlow Innovations](https://ververflow.nl)
+MIT -- [VerverFlow Innovations](https://ververflow.com)
