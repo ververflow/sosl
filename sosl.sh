@@ -464,7 +464,12 @@ while [[ $GLOBAL_ITER -lt $MAX_ITERATIONS ]]; do
     --max-turns 15 \
     --allowedTools "$SOSL_TOOLS_MAIN" \
     --max-budget-usd "$BUDGET_PER_ITER" \
-    --model "$MODEL" 2>>"$SOSL_STATE_DIR/claude-stderr.log" || echo '{"is_error": true}')
+    --model "$MODEL" < /dev/null 2>>"$SOSL_STATE_DIR/claude-stderr.log") || true
+  # On e.g. error_max_budget_usd the CLI exits non-zero but still prints a
+  # result JSON with the real cost. An `|| echo fallback` inside the capture
+  # would append a second JSON to it, break parsing, and drop that cost from
+  # the budget accounting — so only substitute when nothing came back at all.
+  [[ -n "$claude_output" ]] || claude_output='{"is_error": true}'
   hb_touch
 
   iter_cost=$(echo "$claude_output" | python3 -c "
@@ -677,7 +682,12 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
     --max-turns 15 \
     --allowedTools "$SOSL_TOOLS_MAIN" \
     --max-budget-usd "$BUDGET_PER_ITER" \
-    --model "$MODEL" 2>>"$SOSL_STATE_DIR/claude-stderr.log" || echo '{"is_error": true}')
+    --model "$MODEL" < /dev/null 2>>"$SOSL_STATE_DIR/claude-stderr.log") || true
+  # On e.g. error_max_budget_usd the CLI exits non-zero but still prints a
+  # result JSON with the real cost. An `|| echo fallback` inside the capture
+  # would append a second JSON to it, break parsing, and drop that cost from
+  # the budget accounting — so only substitute when nothing came back at all.
+  [[ -n "$claude_output" ]] || claude_output='{"is_error": true}'
   hb_touch
 
   # Parse Claude response

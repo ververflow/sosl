@@ -74,7 +74,8 @@ judge_review() {
     --output-format json \
     --max-turns 10 \
     --allowedTools "Read Glob Grep Bash(git status:*) Bash(git log:*) Bash(git diff:*) Bash(git show:*)" \
-    --model "$judge_model" 2>>"$sosl_state_dir/claude-stderr.log" || echo '{"is_error": true}')
+    --model "$judge_model" < /dev/null 2>>"$sosl_state_dir/claude-stderr.log") || true
+  [[ -n "$judge_output" ]] || judge_output='{"is_error": true}'
 
   # ── Parse verdict ────────────────────────────────────────────────────────
   local verdict

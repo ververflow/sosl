@@ -21,7 +21,7 @@ bash "$SOSL_DIR/sosl.sh" \
   --target "$TARGET" \
   --model claude-haiku-4-5 \
   --samples 1 --max-iterations 2 \
-  --budget-per-iter 0.05 --max-cost 0.20
+  --budget-per-iter 0.30 --max-cost 0.75
 
 echo ""
 echo "== smoke checks =="

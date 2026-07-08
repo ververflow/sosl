@@ -298,7 +298,8 @@ note "base: $NIGHT_BASE_REF @ $BASE_SHA"
 # Auth ping: catches logged-out / rate-limited CLI before burning the night
 ping_out=$(cd "$NIGHT_TARGET" && sosl_timeout 120 claude -p "Reply with exactly: OK" \
   --output-format json --model claude-haiku-4-5 --max-turns 1 \
-  --max-budget-usd 0.05 2>>"$NOTES" || echo '{"is_error": true}')
+  --max-budget-usd 0.10 < /dev/null 2>>"$NOTES") || true
+[[ -n "$ping_out" ]] || ping_out='{"is_error": true}'
 ping_err=$(echo "$ping_out" | python3 -c "import json,sys
 try: print('true' if json.loads(sys.stdin.read()).get('is_error') else 'false')
 except Exception: print('true')" 2>/dev/null || echo true)
