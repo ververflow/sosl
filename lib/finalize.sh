@@ -16,9 +16,10 @@ finalize_branch() {
   local py_work
   py_work=$(to_py_path "$work_dir")
 
-  # Get commits on the SOSL branch (not on main), oldest first
+  # Get commits on the SOSL branch (not on the base ref), oldest first
+  local base_ref="${SOSL_BASE_REF:-main}"
   local commits
-  commits=$(git -C "$work_dir" log main.."$branch" --pretty=format:"%H" --reverse 2>/dev/null)
+  commits=$(git -C "$work_dir" log "$base_ref".."$branch" --pretty=format:"%H" --reverse 2>/dev/null)
 
   if [[ -z "$commits" ]]; then
     log_warn "No commits to finalize on $branch"
@@ -32,14 +33,15 @@ finalize_branch() {
   # Group commits by shared files using union-find (Python does all git calls)
   local groups_json
   groups_json=$(python3 - "$py_work" "$branch" <<'PYEOF'
-import subprocess, sys, json
+import subprocess, sys, json, os
 from collections import defaultdict
 
 work_dir, branch = sys.argv[1], sys.argv[2]
+base_ref = os.environ.get('SOSL_BASE_REF', 'main')
 
 # Get commit hashes (oldest first)
 result = subprocess.run(
-    ['git', '-C', work_dir, 'log', f'main..{branch}', '--pretty=format:%H', '--reverse'],
+    ['git', '-C', work_dir, 'log', f'{base_ref}..{branch}', '--pretty=format:%H', '--reverse'],
     capture_output=True, text=True)
 hashes = [h.strip() for h in result.stdout.strip().splitlines() if h.strip()]
 
@@ -137,10 +139,11 @@ for i, group in enumerate(groups, 1):
     final_branch = f'{branch}-final-{i}'
     hashes = [c['hash'] for c in group['commits']]
 
-    # Create branch from main
+    # Create branch from the base ref
+    base_ref = os.environ.get('SOSL_BASE_REF', 'main')
     subprocess.run(['git', '-C', work_dir, 'branch', '-D', final_branch],
                    capture_output=True)
-    subprocess.run(['git', '-C', work_dir, 'branch', final_branch, 'main'],
+    subprocess.run(['git', '-C', work_dir, 'branch', final_branch, base_ref],
                    capture_output=True, check=True)
 
     # Cherry-pick commits onto the branch

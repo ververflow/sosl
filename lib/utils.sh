@@ -59,19 +59,27 @@ import sys, re, json
 
 ALLOWED_KEYS = {
     # sosl.sh config keys (string values)
-    'TARGET_DIR', 'DOMAIN_DIR', 'CONFIG_FILE', 'MODEL',
+    'TARGET_DIR', 'DOMAIN_DIR', 'CONFIG_FILE', 'MODEL', 'JUDGE_MODEL',
     'HEALTH_CHECK_URL', 'TARGET_URL', 'URLS', 'SEARCH_MODE', 'NO_JUDGE',
-    'SECONDARY_DOMAINS', 'FINALIZE',
+    'SECONDARY_DOMAINS', 'FINALIZE', 'STACK', 'BASE_REF',
     # sosl.sh config keys (numeric values)
     'MAX_ITERATIONS', 'MAX_HOURS', 'MAX_COST_USD', 'BUDGET_PER_ITER', 'SAMPLES',
+    'MAX_CHILDREN', 'MAX_DEPTH', 'MAX_CONSECUTIVE_ERRORS', 'STAGNATION_THRESHOLD',
     # domain config keys
     'MIN_NOISE_FLOOR', 'ALLOWED_PATHS', 'MAX_NET_DELETIONS', 'MEASURE_TIMEOUT',
+    # night orchestrator keys (sosl-night.sh; sosl.sh ignores them)
+    'RUN_TIMEOUT_MIN', 'NIGHT_ENABLED', 'NIGHT_MAX_TOTAL_COST', 'NIGHT_END_BY',
+    'NIGHT_STALL_MINUTES', 'NIGHT_RUN_TIMEOUT_MIN', 'NIGHT_MIN_BATTERY_PCT',
+    'NIGHT_REQUIRE_AC', 'NIGHT_FETCH', 'NIGHT_NOTIFY', 'NIGHT_BASE_REF',
+    'NIGHT_AUTO_SYNC', 'NIGHT_WATCH_INTERVAL',
 }
 
 NUMERIC_KEYS = {
     'MAX_ITERATIONS', 'MAX_HOURS', 'MAX_COST_USD', 'BUDGET_PER_ITER',
     'SAMPLES', 'MIN_NOISE_FLOOR', 'MAX_NET_DELETIONS', 'MEASURE_TIMEOUT',
-    'MAX_CHILDREN', 'MAX_DEPTH',
+    'MAX_CHILDREN', 'MAX_DEPTH', 'MAX_CONSECUTIVE_ERRORS', 'STAGNATION_THRESHOLD',
+    'RUN_TIMEOUT_MIN', 'NIGHT_MAX_TOTAL_COST', 'NIGHT_STALL_MINUTES',
+    'NIGHT_RUN_TIMEOUT_MIN', 'NIGHT_MIN_BATTERY_PCT', 'NIGHT_WATCH_INTERVAL',
 }
 
 # Values must not contain shell metacharacters that indicate code execution
@@ -184,6 +192,9 @@ git_has_changes() {
 
 git_revert_changes() {
   local target="$1"
+  # Unstage first: run_guards stages untracked files with intent-to-add so the
+  # diff-based checks can see them; reset returns those to plain untracked.
+  git -C "$target" reset -q 2>/dev/null || true
   git -C "$target" checkout -- .
   # Exclude .sosl/ from clean — it contains experiment log and checkpoints
   git -C "$target" clean -fd --exclude=.sosl > /dev/null 2>&1
@@ -191,7 +202,10 @@ git_revert_changes() {
 
 git_commit_sosl() {
   local target="$1" domain="$2" old_score="$3" new_score="$4"
-  git -C "$target" add -u
+  # add -A so files Claude created are committed too. Safe because run_guards
+  # made untracked files diff-visible (add -N) and the scope guard already
+  # approved everything that can be staged here.
+  git -C "$target" add -A -- . ':(exclude).sosl' ':(exclude).sosl-worktrees'
   git -C "$target" commit -m "$(cat <<EOF
 sosl($domain): $old_score → $new_score
 

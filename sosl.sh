@@ -8,6 +8,7 @@
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/compat.sh"
 source "$SCRIPT_DIR/lib/utils.sh"
 source "$SCRIPT_DIR/lib/confidence.sh"
 source "$SCRIPT_DIR/lib/eval.sh"
@@ -30,7 +31,8 @@ MAX_HOURS=10
 MAX_COST_USD=25.00
 BUDGET_PER_ITER=1.00
 SAMPLES=5
-MODEL="claude-sonnet-4-5"
+MODEL="claude-sonnet-5"
+JUDGE_MODEL=""
 HEALTH_CHECK_URL=""
 RESUME=false
 DRY_RUN=false
@@ -40,6 +42,14 @@ MAX_CHILDREN=3
 MAX_DEPTH=5
 NO_JUDGE=false
 FINALIZE=false
+BASE_REF=""
+MAX_CONSECUTIVE_ERRORS=3
+STAGNATION_THRESHOLD=7
+
+# Tool allowlist for the optimizer loop. Modern permission grammar: Bash(cmd
+# prefix:*). The legacy colon form (Bash(git:status)) silently grants nothing
+# on current CLIs, which blocks git/npm inside the loop without any error.
+readonly SOSL_TOOLS_MAIN='Read Edit Write Glob Grep Bash(npm run:*) Bash(npx:*) Bash(git status:*) Bash(git diff:*) Bash(git log:*)'
 
 # ── Parse arguments ─────────────────────────────────────────────────────────
 print_usage() {
@@ -59,7 +69,9 @@ Options:
   --max-cost <N>          Maximum total cost in USD (default: 25.00)
   --budget-per-iter <N>   Maximum cost per iteration in USD (default: 1.00)
   --samples <N>           Measurements per evaluation (default: 5)
-  --model <model>         Claude model to use (default: claude-sonnet-4-5)
+  --model <model>         Claude model to use (default: claude-sonnet-5)
+  --judge-model <model>   Model for the Judge review (default: same as --model)
+  --base <ref>            Base the work branch on this ref instead of HEAD
   --health-check <url>    URL to check before starting (e.g., http://localhost:3000)
   --search <mode>         Search strategy: linear (default) or tree (greedy best-first)
   --max-children <N>      Tree search: max attempts per node (default: 3)
@@ -83,6 +95,8 @@ while [[ $# -gt 0 ]]; do
     --budget-per-iter) BUDGET_PER_ITER="$2"; _cli_budget=1; shift 2 ;;
     --samples)        SAMPLES="$2"; _cli_samples=1; shift 2 ;;
     --model)          MODEL="$2"; _cli_model=1; shift 2 ;;
+    --judge-model)    JUDGE_MODEL="$2"; _cli_judge_model=1; shift 2 ;;
+    --base)           BASE_REF="$2"; _cli_base=1; shift 2 ;;
     --health-check)   HEALTH_CHECK_URL="$2"; shift 2 ;;
     --search)         SEARCH_MODE="$2"; _cli_search=1; shift 2 ;;
     --max-children)   MAX_CHILDREN="$2"; _cli_children=1; shift 2 ;;
@@ -115,6 +129,10 @@ if [[ -n "$CONFIG_FILE" ]]; then
   _v=$(_cfg_get BUDGET_PER_ITER); [[ -n "$_v" ]] && [[ "$_cli_budget" != "1" ]]  && BUDGET_PER_ITER="$_v"
   _v=$(_cfg_get SAMPLES);       [[ -n "$_v" ]] && [[ "$_cli_samples" != "1" ]]   && SAMPLES="$_v"
   _v=$(_cfg_get MODEL);         [[ -n "$_v" ]] && [[ "$_cli_model" != "1" ]]     && MODEL="$_v"
+  _v=$(_cfg_get JUDGE_MODEL);   [[ -n "$_v" ]] && [[ "$_cli_judge_model" != "1" ]] && JUDGE_MODEL="$_v"
+  _v=$(_cfg_get BASE_REF);      [[ -n "$_v" ]] && [[ "$_cli_base" != "1" ]]      && BASE_REF="$_v"
+  _v=$(_cfg_get MAX_CONSECUTIVE_ERRORS); [[ -n "$_v" ]] && MAX_CONSECUTIVE_ERRORS="$_v"
+  _v=$(_cfg_get STAGNATION_THRESHOLD);   [[ -n "$_v" ]] && STAGNATION_THRESHOLD="$_v"
   _v=$(_cfg_get HEALTH_CHECK_URL); [[ -n "$_v" ]] && [[ -z "$HEALTH_CHECK_URL" ]] && HEALTH_CHECK_URL="$_v"
   _v=$(_cfg_get TARGET_URL);    [[ -n "$_v" ]] && export TARGET_URL="$_v"
   _v=$(_cfg_get SEARCH_MODE);   [[ -n "$_v" ]] && [[ "$_cli_search" != "1" ]]    && SEARCH_MODE="$_v"
@@ -153,12 +171,31 @@ GUARD_SCRIPT="$DOMAIN_DIR/guard.sh"
 # Security: parsed by Python, never sourced. Only known keys accepted.
 if [[ -f "$DOMAIN_DIR/config.sh" ]]; then
   domain_cfg=$(parse_config "$DOMAIN_DIR/config.sh") || exit 1
-  _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "MIN_NOISE_FLOOR"); [[ -n "$_v" ]] && MIN_NOISE_FLOOR="$_v"
-  _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "ALLOWED_PATHS"); [[ -n "$_v" ]] && ALLOWED_PATHS="$_v"
-  _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "MAX_NET_DELETIONS"); [[ -n "$_v" ]] && MAX_NET_DELETIONS="$_v"
-  _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "MEASURE_TIMEOUT"); [[ -n "$_v" ]] && MEASURE_TIMEOUT="$_v"
-  _v=$(echo "$domain_cfg" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get(sys.argv[1],''))" "SECONDARY_DOMAINS"); [[ -n "$_v" ]] && SECONDARY_DOMAINS="$_v"
+  _dcfg() { echo "$domain_cfg" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get(sys.argv[1],''))" "$1"; }
+  _v=$(_dcfg MIN_NOISE_FLOOR);   [[ -n "$_v" ]] && MIN_NOISE_FLOOR="$_v"
+  _v=$(_dcfg ALLOWED_PATHS);     [[ -n "$_v" ]] && ALLOWED_PATHS="$_v"
+  _v=$(_dcfg MAX_NET_DELETIONS); [[ -n "$_v" ]] && MAX_NET_DELETIONS="$_v"
+  # Exported: measure.sh/guard.sh run as child processes and honor it too
+  _v=$(_dcfg MEASURE_TIMEOUT);   [[ -n "$_v" ]] && export MEASURE_TIMEOUT="$_v"
+  _v=$(_dcfg SECONDARY_DOMAINS); [[ -n "$_v" ]] && SECONDARY_DOMAINS="$_v"
+  # Per-domain overrides; CLI flags win over domain config
+  _v=$(_dcfg MODEL);       [[ -n "$_v" ]] && [[ "${_cli_model:-}" != "1" ]] && MODEL="$_v"
+  _v=$(_dcfg JUDGE_MODEL); [[ -n "$_v" ]] && [[ "${_cli_judge_model:-}" != "1" ]] && JUDGE_MODEL="$_v"
+  _v=$(_dcfg STACK);       [[ -n "$_v" ]] && export STACK="$_v"
+  _v=$(_dcfg BASE_REF);    [[ -n "$_v" ]] && [[ "${_cli_base:-}" != "1" ]] && BASE_REF="$_v"
+  _v=$(_dcfg MAX_CONSECUTIVE_ERRORS); [[ -n "$_v" ]] && MAX_CONSECUTIVE_ERRORS="$_v"
+  _v=$(_dcfg STAGNATION_THRESHOLD);   [[ -n "$_v" ]] && STAGNATION_THRESHOLD="$_v"
 fi
+
+# Validate the base ref early: a typo here must not silently fall back to HEAD
+if [[ -n "$BASE_REF" ]]; then
+  if ! git -C "$TARGET_DIR" rev-parse --verify -q "${BASE_REF}^{commit}" >/dev/null; then
+    log_err "--base ref not found in target: $BASE_REF"
+    exit 1
+  fi
+fi
+# Judge/finalize diff against this ref; default main for existing behaviour
+export SOSL_BASE_REF="${BASE_REF:-main}"
 
 [[ ! -f "$DIRECTIVE_FILE" ]] && { log_err "Missing: $DIRECTIVE_FILE"; exit 1; }
 [[ ! -f "$MEASURE_SCRIPT" ]] && { log_err "Missing: $MEASURE_SCRIPT"; exit 1; }
@@ -173,7 +210,7 @@ BRANCH="sosl/${DOMAIN_NAME}/${TIMESTAMP}"
 TOTAL_COST=0.00
 IMPROVEMENTS=0
 STAGNATION=0
-STAGNATION_THRESHOLD=7
+CONSECUTIVE_ERRORS=0
 
 # .sosl/ lives in the ORIGINAL target dir (not the worktree)
 # Exported so measure.sh/guard.sh can write audit details there
@@ -190,8 +227,12 @@ cleanup() {
   local exit_code=$?
   if [[ $exit_code -ne 0 ]]; then
     log_warn "SOSL interrupted (exit $exit_code). State saved to checkpoint."
-    save_checkpoint "$TARGET_DIR" "$RUN_ID" "$ITER" "$BASELINE" "$TOTAL_COST" "$BRANCH"
+    save_checkpoint "$TARGET_DIR" "$RUN_ID" "$ITER" "$BASELINE" "$TOTAL_COST" "$BRANCH" "$DOMAIN_NAME"
   fi
+  # Machine-readable contract for sosl-night.sh — written on every exit path
+  write_run_manifest "$TARGET_DIR" "$RUN_ID" "$DOMAIN_NAME" "${BRANCH:-}" "${SEARCH_MODE:-linear}" \
+    "${INITIAL_BASELINE:-}" "${BASELINE:-}" "${IMPROVEMENTS:-0}" "${ITER:-0}" "${TOTAL_COST:-0}" \
+    "$exit_code" "${START_TIME:-0}" || true
   # Summary
   echo ""
   log_bold "═══ SOSL Summary ═══"
@@ -241,11 +282,11 @@ if [[ "$RESUME" == false ]]; then
   if [[ -d "$WORK_DIR" ]]; then
     git -C "$TARGET_DIR" worktree remove "$WORK_DIR" --force 2>/dev/null || true
   fi
-  git -C "$TARGET_DIR" worktree add -b "$BRANCH" "$WORK_DIR" HEAD 2>/dev/null || {
+  git -C "$TARGET_DIR" worktree add -b "$BRANCH" "$WORK_DIR" "${BASE_REF:-HEAD}" 2>/dev/null || {
     log_err "Could not create worktree: $WORK_DIR"
     exit 1
   }
-  log_ok "Created worktree: $WORK_DIR (branch: $BRANCH)"
+  log_ok "Created worktree: $WORK_DIR (branch: $BRANCH, base: ${BASE_REF:-HEAD})"
   log "You can keep working on main in $TARGET_DIR"
 
   # Symlink node_modules from original to worktree (worktrees don't share them)
@@ -355,6 +396,12 @@ while [[ $GLOBAL_ITER -lt $MAX_ITERATIONS ]]; do
     log_warn "Remaining budget (\$$remaining) < per-iter budget (\$$BUDGET_PER_ITER). Stopping."
     break
   fi
+  # Tree mode previously had no stagnation breaker at all: a systematic
+  # failure could burn every iteration before the frontier ran dry.
+  if [[ $STAGNATION -ge $STAGNATION_THRESHOLD ]]; then
+    log_warn "Stagnation threshold ($STAGNATION_THRESHOLD iterations without a new node). Stopping."
+    break
+  fi
 
   # ── Select node from frontier ─────────────────────────────────────────────
   node_json=$(tree_select_node "$TARGET_DIR" "$MAX_CHILDREN" "$MAX_DEPTH")
@@ -415,9 +462,10 @@ while [[ $GLOBAL_ITER -lt $MAX_ITERATIONS ]]; do
   claude_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
     --output-format json \
     --max-turns 15 \
-    --allowedTools "Read Edit Write Glob Grep Bash(npm:run *) Bash(npx:*) Bash(git:status) Bash(git:diff) Bash(git:log)" \
+    --allowedTools "$SOSL_TOOLS_MAIN" \
     --max-budget-usd "$BUDGET_PER_ITER" \
-    --model "$MODEL" 2>/dev/null || echo '{"is_error": true}')
+    --model "$MODEL" 2>>"$SOSL_STATE_DIR/claude-stderr.log" || echo '{"is_error": true}')
+  hb_touch
 
   iter_cost=$(echo "$claude_output" | python3 -c "
 import json, sys
@@ -462,14 +510,24 @@ except Exception:
     tree_record_failure "$TARGET_DIR" "$node_id" "$ITER_MODE" "${strategy_summary:-Claude error}" "error" "$iter_cost" "$((GLOBAL_ITER + 1))"
     append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Claude error" "$ITER_MODE" "$strategy_summary"
     GLOBAL_ITER=$((GLOBAL_ITER + 1))
+    STAGNATION=$((STAGNATION + 1))
+    CONSECUTIVE_ERRORS=$((CONSECUTIVE_ERRORS + 1))
+    # Errors cost ~$0, so neither the cost breaker nor the budget pre-check
+    # would ever stop a dead/logged-out CLI from burning all iterations.
+    if [[ $CONSECUTIVE_ERRORS -ge $MAX_CONSECUTIVE_ERRORS ]]; then
+      log_err "$CONSECUTIVE_ERRORS consecutive Claude errors (see $SOSL_STATE_DIR/claude-stderr.log). Aborting run."
+      break
+    fi
     continue
   fi
+  CONSECUTIVE_ERRORS=0
 
   if ! git_has_changes "$WORK_DIR"; then
     log_warn "No code changes made. Recording failure."
     tree_record_failure "$TARGET_DIR" "$node_id" "$ITER_MODE" "${strategy_summary:-No changes}" "no_changes" "$iter_cost" "$((GLOBAL_ITER + 1))"
     append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "$BASELINE" false "$iter_cost" "No changes" "$ITER_MODE" "$strategy_summary"
     GLOBAL_ITER=$((GLOBAL_ITER + 1))
+    STAGNATION=$((STAGNATION + 1))
     continue
   fi
 
@@ -482,6 +540,7 @@ except Exception:
     tree_record_failure "$TARGET_DIR" "$node_id" "$ITER_MODE" "${strategy_summary:-Unknown}" "guard_fail" "$iter_cost" "$((GLOBAL_ITER + 1))"
     append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Guard fail: $safe_result" "$ITER_MODE" "$strategy_summary"
     GLOBAL_ITER=$((GLOBAL_ITER + 1))
+    STAGNATION=$((STAGNATION + 1))
     continue
   }
   log_ok "Guards passed"
@@ -508,6 +567,7 @@ except Exception:
     append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "$new_score" true "$iter_cost" "Improved" "$ITER_MODE" "$strategy_summary"
     session_update "$TARGET_DIR" "$((GLOBAL_ITER + 1))" "$ITER_MODE" "committed" "$BASELINE" "$new_score" "${strategy_summary:-Improvement}" ""
     IMPROVEMENTS=$((IMPROVEMENTS + 1))
+    STAGNATION=0
 
     # Secondary metrics check (after commit, informational only)
     if [[ -n "${SECONDARY_DOMAINS:-}" ]]; then
@@ -524,6 +584,7 @@ except Exception:
     git_revert_changes "$WORK_DIR"
     tree_record_failure "$TARGET_DIR" "$node_id" "$ITER_MODE" "${strategy_summary:-Below noise floor}" "no_improvement" "$iter_cost" "$((GLOBAL_ITER + 1))"
     append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "$new_score" false "$iter_cost" "Below noise floor" "$ITER_MODE" "$strategy_summary"
+    STAGNATION=$((STAGNATION + 1))
   fi
 
   # ── Update tree iteration counter ─────────────────────────────────────────
@@ -614,9 +675,10 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
   claude_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
     --output-format json \
     --max-turns 15 \
-    --allowedTools "Read Edit Write Glob Grep Bash(npm:run *) Bash(npx:*) Bash(git:status) Bash(git:diff) Bash(git:log)" \
+    --allowedTools "$SOSL_TOOLS_MAIN" \
     --max-budget-usd "$BUDGET_PER_ITER" \
-    --model "$MODEL" 2>/dev/null || echo '{"is_error": true}')
+    --model "$MODEL" 2>>"$SOSL_STATE_DIR/claude-stderr.log" || echo '{"is_error": true}')
+  hb_touch
 
   # Parse Claude response
   iter_cost=$(echo "$claude_output" | python3 -c "
@@ -663,9 +725,17 @@ except Exception:
     append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Claude error" "$ITER_MODE" "$strategy_summary"
     session_update "$TARGET_DIR" "$((ITER + 1))" "$ITER_MODE" "error" "$BASELINE" "" "${strategy_summary:-Claude error}" ""
     STAGNATION=$((STAGNATION + 1))
+    CONSECUTIVE_ERRORS=$((CONSECUTIVE_ERRORS + 1))
     ITER=$((ITER + 1))
+    # Errors cost ~$0, so neither the cost breaker nor the budget pre-check
+    # would ever stop a dead/logged-out CLI from burning all iterations.
+    if [[ $CONSECUTIVE_ERRORS -ge $MAX_CONSECUTIVE_ERRORS ]]; then
+      log_err "$CONSECUTIVE_ERRORS consecutive Claude errors (see $SOSL_STATE_DIR/claude-stderr.log). Aborting run."
+      break
+    fi
     continue
   fi
+  CONSECUTIVE_ERRORS=0
 
   # ── Check for changes ────────────────────────────────────────────────────
   if ! git_has_changes "$WORK_DIR"; then
@@ -726,7 +796,7 @@ except Exception:
   fi
 
   # ── Checkpoint ────────────────────────────────────────────────────────────
-  save_checkpoint "$TARGET_DIR" "$RUN_ID" "$ITER" "$BASELINE" "$TOTAL_COST" "$BRANCH"
+  save_checkpoint "$TARGET_DIR" "$RUN_ID" "$ITER" "$BASELINE" "$TOTAL_COST" "$BRANCH" "$DOMAIN_NAME"
 
   ITER_DURATION=$(($(date +%s) - ITER_START))
   log "Iteration $((ITER + 1)) completed in ${ITER_DURATION}s"

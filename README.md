@@ -164,7 +164,7 @@ bash sosl.sh \
   --max-cost 25.00 \                 # Max total USD (default: 25.00)
   --budget-per-iter 1.00 \           # Max per Claude call (default: 1.00)
   --samples 5 \                      # Measurements per eval (default: 5)
-  --model claude-sonnet-4-5 \        # Claude model (default: claude-sonnet-4-5)
+  --model claude-sonnet-5 \           # Claude model (default: claude-sonnet-5)
   --health-check http://localhost:3000 \
   --no-judge \                       # Skip post-loop Judge review
   --finalize \                       # Create independent cherry-pickable branches

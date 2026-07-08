@@ -240,3 +240,59 @@ with open(summary_path, 'w', encoding='utf-8') as f:
             f.write(f'| {e["iter"]} | {e["score_before"]} | {after} | {status} | ${e["cost_usd"]:.2f} | {e["summary"]} |\n')
 PYEOF
 }
+
+# Write .sosl/last-run.json — the machine-readable contract consumed by
+# sosl-night.sh. Called from sosl.sh's EXIT trap, so it exists on every exit
+# path, including a watchdog TERM.
+# Usage: write_run_manifest /target run_id domain branch mode b0 b1 improvements iter cost exit_code start_time
+write_run_manifest() {
+  local target_dir="$1" run_id="$2" domain="$3" branch="$4" search_mode="$5"
+  local baseline_initial="$6" baseline_final="$7" improvements="$8" iterations="$9"
+  local total_cost="${10}" exit_code="${11}" start_time="${12}"
+  local py_dir
+  py_dir=$(to_py_path "$target_dir")
+  python3 - "$py_dir" "$run_id" "$domain" "$branch" "$search_mode" "$baseline_initial" \
+    "$baseline_final" "$improvements" "$iterations" "$total_cost" "$exit_code" "$start_time" \
+    <<'PYEOF' 2>/dev/null || true
+import datetime, json, os, re, sys
+
+(py_dir, run_id, domain, branch, search_mode, b0, b1, improvements,
+ iterations, total_cost, exit_code, start_time) = sys.argv[1:13]
+
+def num(x, cast=float, default=0):
+    try:
+        return cast(float(x))
+    except (TypeError, ValueError):
+        return default
+
+sosl_dir = os.path.join(py_dir, '.sosl')
+os.makedirs(sosl_dir, exist_ok=True)
+
+# Judge verdict, but only from THIS run (mtime after start), else SKIPPED
+verdict = 'SKIPPED'
+report = os.path.join(sosl_dir, 'JUDGE_REPORT.md')
+if os.path.exists(report) and os.path.getmtime(report) >= num(start_time):
+    m = re.search(r'\*\*Verdict:\*\*\s*(.+)', open(report, encoding='utf-8').read())
+    if m:
+        verdict = m.group(1).strip()
+
+data = {
+    'run_id': run_id,
+    'domain': domain,
+    'branch': branch,
+    'search_mode': search_mode,
+    'baseline_initial': num(b0),
+    'baseline_final': num(b1),
+    'improvements': num(improvements, int),
+    'iterations': num(iterations, int),
+    'total_cost_usd': num(total_cost),
+    'judge_verdict': verdict,
+    'status': 'completed' if exit_code == '0' else 'interrupted',
+    'ended_at': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
+}
+tmp = os.path.join(sosl_dir, '.last-run.json.tmp')
+with open(tmp, 'w', encoding='utf-8') as f:
+    json.dump(data, f, indent=2)
+os.replace(tmp, os.path.join(sosl_dir, 'last-run.json'))
+PYEOF
+}
