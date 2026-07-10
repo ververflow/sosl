@@ -483,6 +483,7 @@ while [[ $GLOBAL_ITER -lt $MAX_ITERATIONS ]]; do
 
   # ── Call Claude ───────────────────────────────────────────────────────────
   log "Calling Claude ($MODEL, budget: \$$BUDGET_PER_ITER)..."
+  pre_claude_head=$(git -C "$WORK_DIR" rev-parse HEAD 2>/dev/null)
 
   claude_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
     --output-format json \
@@ -552,6 +553,18 @@ except Exception:
     continue
   fi
   CONSECUTIVE_ERRORS=0
+
+  # Claude must never commit its own work — that bypasses guards, scope
+  # checks and measurement entirely (the loop sees a clean tree, records
+  # "No changes", and an unguarded commit rides the branch to the merge).
+  # Soft-land any self-commits back into the working tree so the normal
+  # guard → measure → commit/revert pipeline judges them like any change.
+  if [[ -n "${pre_claude_head:-}" ]] && \
+     [[ "$(git -C "$WORK_DIR" rev-parse HEAD 2>/dev/null)" != "$pre_claude_head" ]]; then
+    _n_self=$(git -C "$WORK_DIR" rev-list --count "$pre_claude_head..HEAD" 2>/dev/null || echo "?")
+    log_warn "Claude committed by itself ($_n_self commit(s)) — resetting into working tree for guards"
+    git -C "$WORK_DIR" reset --mixed -q "$pre_claude_head" 2>/dev/null || true
+  fi
 
   if ! git_has_changes "$WORK_DIR"; then
     log_warn "No code changes made. Recording failure."
@@ -702,6 +715,7 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
 
   # ── Call Claude ───────────────────────────────────────────────────────────
   log "Calling Claude ($MODEL, budget: \$$BUDGET_PER_ITER)..."
+  pre_claude_head=$(git -C "$WORK_DIR" rev-parse HEAD 2>/dev/null)
 
   claude_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
     --output-format json \
@@ -773,6 +787,18 @@ except Exception:
     continue
   fi
   CONSECUTIVE_ERRORS=0
+
+  # Claude must never commit its own work — that bypasses guards, scope
+  # checks and measurement entirely (the loop sees a clean tree, records
+  # "No changes", and an unguarded commit rides the branch to the merge).
+  # Soft-land any self-commits back into the working tree so the normal
+  # guard → measure → commit/revert pipeline judges them like any change.
+  if [[ -n "${pre_claude_head:-}" ]] && \
+     [[ "$(git -C "$WORK_DIR" rev-parse HEAD 2>/dev/null)" != "$pre_claude_head" ]]; then
+    _n_self=$(git -C "$WORK_DIR" rev-list --count "$pre_claude_head..HEAD" 2>/dev/null || echo "?")
+    log_warn "Claude committed by itself ($_n_self commit(s)) — resetting into working tree for guards"
+    git -C "$WORK_DIR" reset --mixed -q "$pre_claude_head" 2>/dev/null || true
+  fi
 
   # ── Check for changes ────────────────────────────────────────────────────
   if ! git_has_changes "$WORK_DIR"; then

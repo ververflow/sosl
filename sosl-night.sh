@@ -115,7 +115,9 @@ within_window() { # 00:00 .. NIGHT_END_BY
 }
 
 battery_state() { # [pmset-output override for tests] -> "ac" | "batt <pct>"
-  local out="${1:-$(pmset -g batt 2>/dev/null)}"
+  # SOSL_FAKE_PMSET: env override so the offline suite is independent of the
+  # host's real battery state (a low real battery made s10 skip everything).
+  local out="${1:-${SOSL_FAKE_PMSET:-$(pmset -g batt 2>/dev/null)}}"
   if echo "$out" | grep -q "AC Power"; then
     echo "ac"
     return

@@ -189,7 +189,7 @@ EOF
   printf 'DOMAIN_DIR="%s"\nMAX_ITERATIONS=2\nMAX_COST_USD=1.00\n' "$TESTS_DIR/fixture-domain" > "$plan/10-improve.conf"
   printf 'DOMAIN_DIR="%s"\nMAX_ITERATIONS=1\nMAX_COST_USD=1.00\nRUN_TIMEOUT_MIN=1\n' "$TESTS_DIR/fixture-domain-slow" > "$plan/20-slow.conf"
 
-  SOSL_NIGHT_STATE_DIR="$state" NIGHT_WATCH_INTERVAL=5 \
+  SOSL_NIGHT_STATE_DIR="$state" NIGHT_WATCH_INTERVAL=5 SOSL_FAKE_PMSET="Now drawing from 'AC Power'" \
     bash "$SOSL_DIR/sosl-night.sh" --plan "$plan" --force > "$BASE/night1.log" 2>&1
   local rep; rep="$(find "$state" -name NIGHT_REPORT.md 2>/dev/null | head -1)"
   [[ -n "$rep" ]] || { bad "no night report written"; return; }
@@ -198,14 +198,16 @@ EOF
   grep -qE "TIMEOUT|STALLED" "$rep" && ok "slow run capped by watchdog" || bad "no TIMEOUT/STALLED row"
   grep -q "merge" "$rep" && ok "merge command in report" || bad "no merge command in report"
 
-  SOSL_NIGHT_STATE_DIR="$state" bash "$SOSL_DIR/sosl-night.sh" --plan "$plan" > "$BASE/night2.log" 2>&1
+  SOSL_NIGHT_STATE_DIR="$state" SOSL_FAKE_PMSET="Now drawing from 'AC Power'" \
+    bash "$SOSL_DIR/sosl-night.sh" --plan "$plan" > "$BASE/night2.log" 2>&1
   grep -qi "already ran" "$BASE/night2.log" && ok "date-stamp gate skips second run" || bad "no skip on second run"
 
   cat > "$plan/night.conf" <<EOF
 NIGHT_ENABLED=false
 TARGET_DIR="$TARGET"
 EOF
-  SOSL_NIGHT_STATE_DIR="$state" bash "$SOSL_DIR/sosl-night.sh" --plan "$plan" --force > "$BASE/night3.log" 2>&1
+  SOSL_NIGHT_STATE_DIR="$state" SOSL_FAKE_PMSET="Now drawing from 'AC Power'" \
+    bash "$SOSL_DIR/sosl-night.sh" --plan "$plan" --force > "$BASE/night3.log" 2>&1
   grep -qi "disabled" "$BASE/night3.log" && ok "NIGHT_ENABLED=false gate" || bad "disabled gate failed"
 }
 
@@ -264,8 +266,8 @@ s12() {
   grep -q "outside allowed scope" "$LOG" && bad "scope guard tripped over .venv symlink" || ok "no scope fail on planted symlink"
   local br; br="$(sosl_branch fixture-domain)"
   [[ -n "$br" ]] || { bad "no sosl branch"; return; }
-  git -C "$TARGET" show --name-only --format= "$br" 2>/dev/null | grep -q "\.venv" \
-    && bad ".venv leaked into the commit" || ok ".venv not committed"
+  [[ "$(git -C "$TARGET" show --name-only --format= "$br" 2>/dev/null | grep -c "\.venv")" == "0" ]] \
+    && ok ".venv not committed" || bad ".venv leaked into the commit"
 
   # Guard-fail path: the revert's git clean must spare the planted symlink
   new_target t12b
@@ -277,7 +279,25 @@ s12() {
     && ok "revert clean spared the .venv symlink" || bad "symlink gone after revert"
 }
 
-all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10 s11 s12"
+s13() {
+  hdr "s13 Claude self-commits are reset and re-judged by the pipeline"
+  new_target t13
+  SOSL_FAKE_MODE=selfcommit run_sosl "$TESTS_DIR/fixture-domain" --max-iterations 1
+  [[ $RC -eq 0 ]] && ok "clean exit" || bad "rc=$RC (see $LOG)"
+  grep -q "committed by itself" "$LOG" && ok "self-commit detected and reset" || bad "no self-commit warning"
+  local br; br="$(sosl_branch fixture-domain)"
+  [[ -n "$br" ]] || { bad "no sosl branch"; return; }
+  # grep -c, not grep -q: -q exits on first match, git gets SIGPIPE and
+  # under pipefail the pipeline reads as failed.
+  [[ "$(git -C "$TARGET" log --format=%s "$br" | grep -c "^feat: self-committed")" == "0" ]] \
+    && ok "no foreign commit on branch" || bad "foreign commit survived on the branch"
+  [[ "$(git -C "$TARGET" log --oneline "$br" | grep -c "sosl(fixture-domain)")" -ge 1 ]] \
+    && ok "work re-landed as a guarded sosl commit" || bad "improvement lost after reset"
+  local score; score="$(git -C "$TARGET" show "$br:score.txt" 2>/dev/null | tr -d '[:space:]')"
+  [[ "$score" == "43" ]] && ok "score improvement preserved (43)" || bad "branch score = '$score'"
+}
+
+all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10 s11 s12 s13"
 if [[ ! -f "$SOSL_DIR/sosl-night.sh" ]]; then
   all="${all/ s10/}"
 fi

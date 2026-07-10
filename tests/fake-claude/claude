@@ -9,6 +9,7 @@
 #   noop               change nothing, report success
 #   error              return {"is_error": true}
 #   noqa               append a "# noqa" suppression to backend/app.py
+#   selfcommit         improve score.txt but git-commit it directly (bypass test)
 # Extras:
 #   SOSL_FAKE_NEWFILE=1        also create a new file (default notes.md)
 #   SOSL_FAKE_NEWFILE_PATH=..  path for that new file (out-of-scope tests)
@@ -46,6 +47,17 @@ case "$mode" in
       printf 'y = 1  # noqa\n' >> backend/app.py
     fi
     emit false 0.01 '"STRATEGY: silenced a linter finding with a suppression comment"'
+    ;;
+  selfcommit)
+    # Worst-case agent: improves the score but commits the work itself,
+    # bypassing the loop's guard -> measure -> commit pipeline.
+    if [[ -f score.txt ]]; then
+      n="$(tr -cd '0-9' < score.txt)"
+      echo "$(( n + 1 ))" > score.txt
+    fi
+    git add -A >/dev/null 2>&1
+    git -c user.email=fake@test -c user.name=fake commit -qm "feat: self-committed by claude" >/dev/null 2>&1
+    emit false 0.02 '"STRATEGY: incremented score.txt and committed it myself"'
     ;;
   improve|*)
     if [[ -f score.txt ]]; then
