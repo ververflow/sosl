@@ -42,7 +42,13 @@ run_guards() {
   # Make untracked files visible (with content) to every diff-based check
   # below: file count, scope, deletions, suppressions, deps. Reverted by the
   # `git reset` in git_revert_changes; committed via `git add -A`.
-  git -C "$target_dir" add -N -- . ':(exclude).sosl' ':(exclude).sosl-worktrees' 2>/dev/null || true
+  # SOSL_WT_LINKS: infra symlinks SOSL planted in the worktree (node_modules,
+  # .venv) — trailing-slash gitignore patterns don't match symlinks, so they
+  # must be excluded here or the scope guard trips over SOSL's own plumbing.
+  local _add_args=('.' ':(exclude).sosl' ':(exclude).sosl-worktrees')
+  local _l
+  for _l in ${SOSL_WT_LINKS:-}; do _add_args+=(":(exclude)$_l"); done
+  git -C "$target_dir" add -N -- "${_add_args[@]}" 2>/dev/null || true
 
   # ══ Layer 1: Universal guards (any stack) ════════════════════════════════
 

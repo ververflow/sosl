@@ -248,7 +248,34 @@ EOF
   unset SOSL_FAKE_GH_LOG
 }
 
-all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10 s11"
+s12() {
+  hdr "s12 planted infra symlinks (.venv) stay out of guards, commits and cleans"
+  # gitignore uses the standard trailing-slash form, which does NOT match the
+  # symlink SOSL plants in the worktree — the bug this scenario pins down.
+  new_target t12
+  mkdir -p "$TARGET/.venv/bin"; echo "fake" > "$TARGET/.venv/bin/python"
+  printf '.venv/\n' >> "$TARGET/.gitignore"
+  git -C "$TARGET" add .gitignore >/dev/null && git -C "$TARGET" commit -qm "ignore venv"
+
+  run_sosl "$TESTS_DIR/fixture-domain" --max-iterations 1
+  [[ $RC -eq 0 ]] && ok "clean exit" || bad "rc=$RC (see $LOG)"
+  grep -q "outside allowed scope" "$LOG" && bad "scope guard tripped over .venv symlink" || ok "no scope fail on planted symlink"
+  local br; br="$(sosl_branch fixture-domain)"
+  [[ -n "$br" ]] || { bad "no sosl branch"; return; }
+  git -C "$TARGET" show --name-only --format= "$br" 2>/dev/null | grep -q "\.venv" \
+    && bad ".venv leaked into the commit" || ok ".venv not committed"
+
+  # Guard-fail path: the revert's git clean must spare the planted symlink
+  new_target t12b
+  mkdir -p "$TARGET/.venv/bin"; echo "fake" > "$TARGET/.venv/bin/python"
+  printf '.venv/\n' >> "$TARGET/.gitignore"
+  git -C "$TARGET" add .gitignore >/dev/null && git -C "$TARGET" commit -qm "ignore venv"
+  SOSL_FAKE_NEWFILE=1 SOSL_FAKE_NEWFILE_PATH=evil.txt run_sosl "$TESTS_DIR/fixture-domain" --max-iterations 1
+  [[ -L "$TARGET/.sosl-worktrees/fixture-domain/.venv" ]] \
+    && ok "revert clean spared the .venv symlink" || bad "symlink gone after revert"
+}
+
+all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10 s11 s12"
 if [[ ! -f "$SOSL_DIR/sosl-night.sh" ]]; then
   all="${all/ s10/}"
 fi

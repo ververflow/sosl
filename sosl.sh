@@ -304,13 +304,21 @@ if [[ "$RESUME" == false ]]; then
   log_ok "Created worktree: $WORK_DIR (branch: $BRANCH, base: ${BASE_REF:-HEAD})"
   log "You can keep working on main in $TARGET_DIR"
 
-  # Symlink node_modules from original to worktree (worktrees don't share them)
+  # Symlink node_modules from original to worktree (worktrees don't share them).
+  # Track every link we plant: gitignore patterns like `node_modules/` or
+  # `.venv/` match directories only, NOT symlinks — without an explicit
+  # exclude, git sees the link as untracked, the scope guard fails on
+  # infrastructure SOSL itself created, add -A would commit it, and the
+  # revert's git clean would delete it.
+  SOSL_WT_LINKS=""
   for nm_dir in $(find "$TARGET_DIR" -maxdepth 3 -name "node_modules" -type d 2>/dev/null); do
     _relative="${nm_dir#$TARGET_DIR/}"
     _wt_parent="$WORK_DIR/$(dirname "$_relative")"
     if [[ -d "$_wt_parent" ]] && [[ ! -e "$_wt_parent/node_modules" ]]; then
-      ln -s "$nm_dir" "$_wt_parent/node_modules" 2>/dev/null && \
+      ln -s "$nm_dir" "$_wt_parent/node_modules" 2>/dev/null && {
         log "Linked: $_relative"
+        SOSL_WT_LINKS="$SOSL_WT_LINKS $_relative"
+      }
     fi
   done
   # Also link Python venv if present
@@ -319,10 +327,12 @@ if [[ "$RESUME" == false ]]; then
       _relative="${_venv_dir#$TARGET_DIR/}"
       _wt_target="$WORK_DIR/$_relative"
       if [[ ! -e "$_wt_target" ]]; then
-        ln -s "$_venv_dir" "$_wt_target" 2>/dev/null
+        ln -s "$_venv_dir" "$_wt_target" 2>/dev/null && \
+          SOSL_WT_LINKS="$SOSL_WT_LINKS $_relative"
       fi
     fi
   done
+  export SOSL_WT_LINKS
 
   # Health check
   if [[ -n "$HEALTH_CHECK_URL" ]]; then

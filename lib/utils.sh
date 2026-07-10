@@ -226,16 +226,25 @@ git_revert_changes() {
   # diff-based checks can see them; reset returns those to plain untracked.
   git -C "$target" reset -q 2>/dev/null || true
   git -C "$target" checkout -- .
-  # Exclude .sosl/ from clean — it contains experiment log and checkpoints
-  git -C "$target" clean -fd --exclude=.sosl > /dev/null 2>&1
+  # Exclude .sosl/ from clean — it contains experiment log and checkpoints.
+  # Also spare the infra symlinks SOSL planted (SOSL_WT_LINKS): cleaning them
+  # away would force a full venv/node_modules rebuild on the next measure.
+  local _clean_args=(-fd --exclude=.sosl)
+  local _l
+  for _l in ${SOSL_WT_LINKS:-}; do _clean_args+=(--exclude="/$_l"); done
+  git -C "$target" clean "${_clean_args[@]}" > /dev/null 2>&1
 }
 
 git_commit_sosl() {
   local target="$1" domain="$2" old_score="$3" new_score="$4"
   # add -A so files Claude created are committed too. Safe because run_guards
   # made untracked files diff-visible (add -N) and the scope guard already
-  # approved everything that can be staged here.
-  git -C "$target" add -A -- . ':(exclude).sosl' ':(exclude).sosl-worktrees'
+  # approved everything that can be staged here. SOSL_WT_LINKS (infra
+  # symlinks SOSL planted) are excluded — gitignore dir-patterns miss them.
+  local _add_args=('.' ':(exclude).sosl' ':(exclude).sosl-worktrees')
+  local _l
+  for _l in ${SOSL_WT_LINKS:-}; do _add_args+=(":(exclude)$_l"); done
+  git -C "$target" add -A -- "${_add_args[@]}"
   git -C "$target" commit -m "$(cat <<EOF
 sosl($domain): $old_score → $new_score
 
