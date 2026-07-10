@@ -45,6 +45,7 @@ FINALIZE=false
 BASE_REF=""
 MAX_CONSECUTIVE_ERRORS=3
 STAGNATION_THRESHOLD=7
+EXTRA_TOOLS=""
 
 # Tool allowlist for the optimizer loop. Modern permission grammar: Bash(cmd
 # prefix:*). The legacy colon form (Bash(git:status)) silently grants nothing
@@ -139,6 +140,7 @@ if [[ -n "$CONFIG_FILE" ]]; then
   _v=$(_cfg_get MAX_CHILDREN);  [[ -n "$_v" ]] && [[ "$_cli_children" != "1" ]]  && MAX_CHILDREN="$_v"
   _v=$(_cfg_get MAX_DEPTH);     [[ -n "$_v" ]] && [[ "$_cli_depth" != "1" ]]     && MAX_DEPTH="$_v"
   _v=$(_cfg_get URLS);          [[ -n "$_v" ]] && export URLS="$_v"
+  _v=$(_cfg_get EXTRA_TOOLS);   [[ -n "$_v" ]] && EXTRA_TOOLS="$_v"
 fi
 
 # ── Validate ────────────────────────────────────────────────────────────────
@@ -177,6 +179,7 @@ if [[ -f "$DOMAIN_DIR/config.sh" ]]; then
   _v=$(_dcfg MAX_NET_DELETIONS); [[ -n "$_v" ]] && MAX_NET_DELETIONS="$_v"
   # Exported: measure.sh/guard.sh run as child processes and honor it too
   _v=$(_dcfg MEASURE_TIMEOUT);   [[ -n "$_v" ]] && export MEASURE_TIMEOUT="$_v"
+  _v=$(_dcfg EXTRA_TOOLS);       [[ -n "$_v" ]] && EXTRA_TOOLS="$_v"
   _v=$(_dcfg SECONDARY_DOMAINS); [[ -n "$_v" ]] && SECONDARY_DOMAINS="$_v"
   # Per-domain overrides; CLI flags win over domain config
   _v=$(_dcfg MODEL);       [[ -n "$_v" ]] && [[ "${_cli_model:-}" != "1" ]] && MODEL="$_v"
@@ -462,7 +465,7 @@ while [[ $GLOBAL_ITER -lt $MAX_ITERATIONS ]]; do
   claude_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
     --output-format json \
     --max-turns 15 \
-    --allowedTools "$SOSL_TOOLS_MAIN" \
+    --allowedTools "$SOSL_TOOLS_MAIN${EXTRA_TOOLS:+ $EXTRA_TOOLS}" \
     --max-budget-usd "$BUDGET_PER_ITER" \
     --model "$MODEL" < /dev/null 2>>"$SOSL_STATE_DIR/claude-stderr.log") || true
   # On e.g. error_max_budget_usd the CLI exits non-zero but still prints a
@@ -680,7 +683,7 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
   claude_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
     --output-format json \
     --max-turns 15 \
-    --allowedTools "$SOSL_TOOLS_MAIN" \
+    --allowedTools "$SOSL_TOOLS_MAIN${EXTRA_TOOLS:+ $EXTRA_TOOLS}" \
     --max-budget-usd "$BUDGET_PER_ITER" \
     --model "$MODEL" < /dev/null 2>>"$SOSL_STATE_DIR/claude-stderr.log") || true
   # On e.g. error_max_budget_usd the CLI exits non-zero but still prints a

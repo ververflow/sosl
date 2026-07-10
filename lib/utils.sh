@@ -67,6 +67,7 @@ ALLOWED_KEYS = {
     'MAX_CHILDREN', 'MAX_DEPTH', 'MAX_CONSECUTIVE_ERRORS', 'STAGNATION_THRESHOLD',
     # domain config keys
     'MIN_NOISE_FLOOR', 'ALLOWED_PATHS', 'MAX_NET_DELETIONS', 'MEASURE_TIMEOUT',
+    'EXTRA_TOOLS',
     # night orchestrator keys (sosl-night.sh; sosl.sh ignores them)
     'RUN_TIMEOUT_MIN', 'NIGHT_ENABLED', 'NIGHT_MAX_TOTAL_COST', 'NIGHT_END_BY',
     'NIGHT_STALL_MINUTES', 'NIGHT_RUN_TIMEOUT_MIN', 'NIGHT_MIN_BATTERY_PCT',
@@ -84,6 +85,11 @@ NUMERIC_KEYS = {
 
 # Values must not contain shell metacharacters that indicate code execution
 FORBIDDEN_VALUE = re.compile(r'[\$`\(\)]|;\s*\w')
+
+# EXTRA_TOOLS needs parens for the permission grammar (Bash(uv run pytest:*)),
+# so it gets its own strict pattern instead: tool-name characters only, still
+# no $ ` ; & | < > or quotes anywhere.
+EXTRA_TOOLS_PATTERN = re.compile(r'^[A-Za-z0-9_()*:,. /-]+$')
 
 config_file = sys.argv[1]
 result = {}
@@ -110,8 +116,12 @@ with open(config_file, encoding='utf-8') as f:
         if (value.startswith('"') and value.endswith('"')) or \
            (value.startswith("'") and value.endswith("'")):
             value = value[1:-1]
-        # Reject shell metacharacters
-        if FORBIDDEN_VALUE.search(value):
+        # Reject shell metacharacters (EXTRA_TOOLS has its own allowlist pattern)
+        if key == 'EXTRA_TOOLS':
+            if not EXTRA_TOOLS_PATTERN.fullmatch(value):
+                print(f"ERROR: line {lineno}: EXTRA_TOOLS contains forbidden characters", file=sys.stderr)
+                sys.exit(1)
+        elif FORBIDDEN_VALUE.search(value):
             print(f"ERROR: line {lineno}: value contains forbidden characters (shell metacharacters not allowed)", file=sys.stderr)
             sys.exit(1)
         # Validate numeric keys
