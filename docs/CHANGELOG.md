@@ -3,8 +3,24 @@
 ## Next
 
 ### Ideas
-- [ ] Scheduler: cron or `claude --schedule` to run SOSL nightly on multiple projects
+- [ ] Scheduler install: launchd/cron recipe that starts `sosl-night.sh` on a schedule (the orchestrator exists; the install step is manual)
+- [ ] Auto-PR: after a run with improvements, open a PR with the Judge report as description (`gh pr create`)
 - [ ] GitHub Actions workflow for cloud-based runs (no local machine needed overnight)
+- [ ] Mutation-testing domain (mutmut for Python, Stryker for JS/TS) — coverage can be gamed, mutation score barely
+
+---
+
+## v1.0.0 — Autonomous Nights (July 10, 2026)
+
+First stable release. v0.x proved the loop; v1.0 makes it safe to leave running unattended all night.
+
+### What changed
+- **`sosl-night.sh`**: night orchestrator. Runs a plan directory of SOSL configs serially (parallel builds race on shared caches) inside a hard envelope: total cost cap, end-by time, per-run wallclock timeout, stall watchdog, battery guards. Always leaves a `NIGHT_REPORT.md` — a missing report is itself an incident signal. Gates (date stamp, time window, `NIGHT_ENABLED`) make a scheduled kickstart a deliberate no-op by day. Never pushes, never pulls; fetch is opt-in.
+- **Offline test suite** (`tests/run-offline-suite.sh`): 10 scenarios, 30 assertions against a dummy target with a fake-claude stub — loop mechanics, guard reverts, checkpoint resume, budget abort, watchdog kill, night gates. Runs in minutes, zero API calls.
+- **Correctness + robustness for autonomous runs**: configs are parsed with a safe key allowlist (never sourced), `lib/compat.sh` isolates platform differences, checkpoint domain matching is exact instead of substring, the real cost JSON survives a budget-abort, and headless runs no longer wait on stdin.
+
+### Why this matters
+Everything before v1.0 assumed a human nearby. The night orchestrator plus the offline suite are the difference between "a tool you babysit" and "a system you schedule": every failure path ends in a report, every envelope is a hard stop, and the whole loop is testable without spending a cent.
 
 ---
 

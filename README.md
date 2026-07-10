@@ -268,6 +268,19 @@ your-project/
   sosl/<domain>/<timestamp>  # Branch with validated commits
 ```
 
+## Night Orchestrator
+
+Run a plan of multiple domains serially overnight, inside a hard budget/time envelope:
+
+```bash
+bash sosl-night.sh --plan /path/to/night.d          # scheduled (cron/launchd)
+bash sosl-night.sh --plan /path/to/night.d --force  # day test
+```
+
+A plan directory holds one `night.conf` (global envelope: total cost cap, end-by time, stall watchdog, battery guards) plus one numbered `.conf` per run -- each a normal `sosl.sh` config. Runs execute serially in filename order; serial is what you want unattended, because parallel builds race on shared caches.
+
+Every night ends in a `NIGHT_REPORT.md` (in the state dir and under `<target>/.sosl/night/<date>/`) -- even when everything fails. A missing report is itself an incident signal. See [examples/night.d/](examples/night.d/) for a commented plan.
+
 ## Parallel Optimization
 
 Run multiple domains simultaneously, each in its own git worktree:
@@ -291,7 +304,7 @@ SOSL operates on 6 levels:
 | **Micro+** | Session memory | Cross-iteration learning: strategies, dead ends, wins |
 | **Meso** | Self-annealing | Scope temperature + tree search (backtracking, branching) |
 | **Macro** | Night run | One domain, hours of autonomous optimization + Judge review |
-| **System** | Parallel SOSL | Multiple domains via worktrees |
+| **System** | Multi-domain | Serial overnight plan (`sosl-night.sh`) or parallel worktrees (`sosl-parallel.sh`) |
 
 See [docs/architecture.md](docs/architecture.md) for the full breakdown.
 
