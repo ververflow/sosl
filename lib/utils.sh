@@ -39,6 +39,21 @@ to_py_path() {
   fi
 }
 
+# ── Pathspec excludes for git add ───────────────────────────────────────────
+# Print ':(exclude)…' lines for every path git does NOT already ignore.
+# An exclude for an ignored path is redundant (add skips ignored paths) and
+# fatal: git add exits 1 when any pathspec element — exclude magic included —
+# names a gitignored path, and advice.addIgnoredFile=false only silences the
+# hint, not the failure.
+# Usage: sosl_add_excludes <repo> [extra rel paths…]
+sosl_add_excludes() {
+  local repo="$1"; shift
+  local p
+  for p in .sosl .sosl-worktrees "$@"; do
+    git -C "$repo" check-ignore -q "$p" 2>/dev/null || printf ':(exclude)%s\n' "$p"
+  done
+}
+
 # ── Claude error triage ─────────────────────────────────────────────────────
 # Extract the error subtype from a result JSON and persist the raw JSON to
 # claude-errors.jsonl. "Claude error" alone is undebuggable at 03:00; the
@@ -241,9 +256,9 @@ git_commit_sosl() {
   # made untracked files diff-visible (add -N) and the scope guard already
   # approved everything that can be staged here. SOSL_WT_LINKS (infra
   # symlinks SOSL planted) are excluded — gitignore dir-patterns miss them.
-  local _add_args=('.' ':(exclude).sosl' ':(exclude).sosl-worktrees')
-  local _l
-  for _l in ${SOSL_WT_LINKS:-}; do _add_args+=(":(exclude)$_l"); done
+  local _add_args=('.') _p
+  while IFS= read -r _p; do [[ -n "$_p" ]] && _add_args+=("$_p"); done \
+    < <(sosl_add_excludes "$target" ${SOSL_WT_LINKS:-})
   git -C "$target" add -A -- "${_add_args[@]}"
   git -C "$target" commit -m "$(cat <<EOF
 sosl($domain): $old_score → $new_score

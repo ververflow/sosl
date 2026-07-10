@@ -252,9 +252,11 @@ s12() {
   hdr "s12 planted infra symlinks (.venv) stay out of guards, commits and cleans"
   # gitignore uses the standard trailing-slash form, which does NOT match the
   # symlink SOSL plants in the worktree — the bug this scenario pins down.
+  # .sosl/ is ALSO gitignored, like real targets do: an ':(exclude)' pathspec
+  # naming an ignored path makes git add exit 1 (second bug pinned here).
   new_target t12
   mkdir -p "$TARGET/.venv/bin"; echo "fake" > "$TARGET/.venv/bin/python"
-  printf '.venv/\n' >> "$TARGET/.gitignore"
+  printf '.venv/\n.sosl/\n.sosl-worktrees/\n' >> "$TARGET/.gitignore"
   git -C "$TARGET" add .gitignore >/dev/null && git -C "$TARGET" commit -qm "ignore venv"
 
   run_sosl "$TESTS_DIR/fixture-domain" --max-iterations 1
@@ -268,7 +270,7 @@ s12() {
   # Guard-fail path: the revert's git clean must spare the planted symlink
   new_target t12b
   mkdir -p "$TARGET/.venv/bin"; echo "fake" > "$TARGET/.venv/bin/python"
-  printf '.venv/\n' >> "$TARGET/.gitignore"
+  printf '.venv/\n.sosl/\n.sosl-worktrees/\n' >> "$TARGET/.gitignore"
   git -C "$TARGET" add .gitignore >/dev/null && git -C "$TARGET" commit -qm "ignore venv"
   SOSL_FAKE_NEWFILE=1 SOSL_FAKE_NEWFILE_PATH=evil.txt run_sosl "$TESTS_DIR/fixture-domain" --max-iterations 1
   [[ -L "$TARGET/.sosl-worktrees/fixture-domain/.venv" ]] \

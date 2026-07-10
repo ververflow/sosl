@@ -45,9 +45,12 @@ run_guards() {
   # SOSL_WT_LINKS: infra symlinks SOSL planted in the worktree (node_modules,
   # .venv) — trailing-slash gitignore patterns don't match symlinks, so they
   # must be excluded here or the scope guard trips over SOSL's own plumbing.
-  local _add_args=('.' ':(exclude).sosl' ':(exclude).sosl-worktrees')
-  local _l
-  for _l in ${SOSL_WT_LINKS:-}; do _add_args+=(":(exclude)$_l"); done
+  # sosl_add_excludes drops paths git already ignores: an exclude naming an
+  # ignored path makes git add fail outright (and this || true would hide it,
+  # leaving every untracked file invisible to the checks below).
+  local _add_args=('.') _p
+  while IFS= read -r _p; do [[ -n "$_p" ]] && _add_args+=("$_p"); done \
+    < <(sosl_add_excludes "$target_dir" ${SOSL_WT_LINKS:-})
   git -C "$target_dir" add -N -- "${_add_args[@]}" 2>/dev/null || true
 
   # ══ Layer 1: Universal guards (any stack) ════════════════════════════════
