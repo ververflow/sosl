@@ -13,7 +13,7 @@ set -uo pipefail
 SOSL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TESTS_DIR="$SOSL_DIR/tests"
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/sosl-suite.XXXXXX")"
-export PATH="$TESTS_DIR/fake-claude:$PATH"
+export PATH="$TESTS_DIR/fake-claude:$TESTS_DIR/fake-gh:$PATH"
 
 PASS=0; FAIL=0; RUN_N=0
 ok()  { PASS=$((PASS+1)); echo "    ok: $1"; }
@@ -209,9 +209,48 @@ EOF
   grep -qi "disabled" "$BASE/night3.log" && ok "NIGHT_ENABLED=false gate" || bad "disabled gate failed"
 }
 
-all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10"
+s11() {
+  hdr "s11 auto-PR: opt-in, branch pushed, gh called, push-fail never fatal"
+  new_target t11
+  git init --bare -q "$BASE/t11-remote.git"
+  export SOSL_FAKE_GH_LOG="$BASE/t11-gh.log"
+  cat > "$BASE/t11-autopr.conf" <<EOF
+AUTO_PR=true
+AUTO_PR_REPO="example/example"
+AUTO_PR_REMOTE="$BASE/t11-remote.git"
+AUTO_PR_BASE="main"
+EOF
+  run_sosl "$TESTS_DIR/fixture-domain" --max-iterations 1 --config "$BASE/t11-autopr.conf"
+  [[ $RC -eq 0 ]] && ok "clean exit" || bad "rc=$RC (see $LOG)"
+  local br; br="$(sosl_branch fixture-domain)"
+  git --git-dir="$BASE/t11-remote.git" for-each-ref --format='%(refname:short)' 2>/dev/null | grep -qx "$br" \
+    && ok "branch pushed to remote" || bad "branch not on remote"
+  grep -q -- "pr create.*--repo example/example.*--head $br" "$SOSL_FAKE_GH_LOG" 2>/dev/null \
+    && ok "gh pr create called with repo+head" || bad "gh log: $(cat "$SOSL_FAKE_GH_LOG" 2>/dev/null | tr '\n' ' ')"
+  [[ -f "$TARGET/.sosl/pr-url.txt" ]] && ok "pr-url.txt written" || bad "no pr-url.txt"
+
+  # Opt-in: without AUTO_PR, gh must never be called
+  : > "$SOSL_FAKE_GH_LOG"
+  new_target t11b
+  run_sosl "$TESTS_DIR/fixture-domain" --max-iterations 1
+  [[ -s "$SOSL_FAKE_GH_LOG" ]] && bad "gh called without AUTO_PR" || ok "no gh call without AUTO_PR (opt-in)"
+
+  # Unreachable remote: warn + keep the branch, never kill the run
+  new_target t11c
+  cat > "$BASE/t11c.conf" <<EOF
+AUTO_PR=true
+AUTO_PR_REPO="example/example"
+AUTO_PR_REMOTE="$BASE/does-not-exist.git"
+EOF
+  run_sosl "$TESTS_DIR/fixture-domain" --max-iterations 1 --config "$BASE/t11c.conf"
+  [[ $RC -eq 0 ]] && ok "push failure not fatal" || bad "rc=$RC on unreachable remote"
+  grep -q "auto-PR: push failed" "$LOG" && ok "push failure logged" || bad "no push-failed warning"
+  unset SOSL_FAKE_GH_LOG
+}
+
+all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10 s11"
 if [[ ! -f "$SOSL_DIR/sosl-night.sh" ]]; then
-  all="${all% s10}"
+  all="${all/ s10/}"
 fi
 
 if [[ $# -gt 0 ]]; then scenarios="$*"; else scenarios="$all"; fi

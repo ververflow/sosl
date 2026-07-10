@@ -39,6 +39,23 @@ to_py_path() {
   fi
 }
 
+# ── Claude error triage ─────────────────────────────────────────────────────
+# Extract the error subtype from a result JSON and persist the raw JSON to
+# claude-errors.jsonl. "Claude error" alone is undebuggable at 03:00; the
+# subtype (error_max_turns, error_max_budget_usd, ...) names the actual fix.
+# Usage: claude_error_subtype "$claude_output" "$state_dir" → subtype on stdout
+claude_error_subtype() {
+  local output="$1" state_dir="$2"
+  [[ -n "$state_dir" ]] && printf '%s\n' "$output" >> "$state_dir/claude-errors.jsonl" 2>/dev/null
+  echo "$output" | python3 -c "
+import json, sys
+try:
+    print(json.loads(sys.stdin.read()).get('subtype', 'unknown'))
+except Exception:
+    print('unparseable')
+" 2>/dev/null || echo "unknown"
+}
+
 # ── Sanitize output for logging (strip potential secrets) ──────────────────
 # Removes lines containing common secret patterns before writing to experiment log
 sanitize_for_log() {
@@ -67,7 +84,9 @@ ALLOWED_KEYS = {
     'MAX_CHILDREN', 'MAX_DEPTH', 'MAX_CONSECUTIVE_ERRORS', 'STAGNATION_THRESHOLD',
     # domain config keys
     'MIN_NOISE_FLOOR', 'ALLOWED_PATHS', 'MAX_NET_DELETIONS', 'MEASURE_TIMEOUT',
-    'EXTRA_TOOLS',
+    'EXTRA_TOOLS', 'MAX_TURNS',
+    # auto-PR keys
+    'AUTO_PR', 'AUTO_PR_REPO', 'AUTO_PR_REMOTE', 'AUTO_PR_BASE',
     # night orchestrator keys (sosl-night.sh; sosl.sh ignores them)
     'RUN_TIMEOUT_MIN', 'NIGHT_ENABLED', 'NIGHT_MAX_TOTAL_COST', 'NIGHT_END_BY',
     'NIGHT_STALL_MINUTES', 'NIGHT_RUN_TIMEOUT_MIN', 'NIGHT_MIN_BATTERY_PCT',
@@ -81,6 +100,7 @@ NUMERIC_KEYS = {
     'MAX_CHILDREN', 'MAX_DEPTH', 'MAX_CONSECUTIVE_ERRORS', 'STAGNATION_THRESHOLD',
     'RUN_TIMEOUT_MIN', 'NIGHT_MAX_TOTAL_COST', 'NIGHT_STALL_MINUTES',
     'NIGHT_RUN_TIMEOUT_MIN', 'NIGHT_MIN_BATTERY_PCT', 'NIGHT_WATCH_INTERVAL',
+    'MAX_TURNS',
 }
 
 # Values must not contain shell metacharacters that indicate code execution

@@ -22,6 +22,7 @@ source "$SCRIPT_DIR/lib/tree.sh"
 source "$SCRIPT_DIR/lib/judge.sh"
 source "$SCRIPT_DIR/lib/secondary.sh"
 source "$SCRIPT_DIR/lib/finalize.sh"
+source "$SCRIPT_DIR/lib/autopr.sh"
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 DOMAIN_DIR=""
@@ -46,6 +47,8 @@ BASE_REF=""
 MAX_CONSECUTIVE_ERRORS=3
 STAGNATION_THRESHOLD=7
 EXTRA_TOOLS=""
+AUTO_PR=false
+MAX_TURNS=15
 
 # Tool allowlist for the optimizer loop. Modern permission grammar: Bash(cmd
 # prefix:*). The legacy colon form (Bash(git:status)) silently grants nothing
@@ -78,6 +81,9 @@ Options:
   --max-children <N>      Tree search: max attempts per node (default: 3)
   --max-depth <N>         Tree search: max tree depth (default: 5)
   --no-judge              Skip the Judge Agent review after the loop
+                          (auto-PR: set AUTO_PR=true + AUTO_PR_REPO in a config
+                          file to open a PR with the Judge report after a run
+                          with improvements; see lib/autopr.sh)
   --finalize              Create independent cherry-pickable branches from commits
   --resume                Resume from last checkpoint
   --dry-run               Print prompts without calling Claude
@@ -141,6 +147,11 @@ if [[ -n "$CONFIG_FILE" ]]; then
   _v=$(_cfg_get MAX_DEPTH);     [[ -n "$_v" ]] && [[ "$_cli_depth" != "1" ]]     && MAX_DEPTH="$_v"
   _v=$(_cfg_get URLS);          [[ -n "$_v" ]] && export URLS="$_v"
   _v=$(_cfg_get EXTRA_TOOLS);   [[ -n "$_v" ]] && EXTRA_TOOLS="$_v"
+  _v=$(_cfg_get MAX_TURNS);      [[ -n "$_v" ]] && MAX_TURNS="$_v"
+  _v=$(_cfg_get AUTO_PR);        [[ -n "$_v" ]] && AUTO_PR="$_v"
+  _v=$(_cfg_get AUTO_PR_REPO);   [[ -n "$_v" ]] && AUTO_PR_REPO="$_v"
+  _v=$(_cfg_get AUTO_PR_REMOTE); [[ -n "$_v" ]] && AUTO_PR_REMOTE="$_v"
+  _v=$(_cfg_get AUTO_PR_BASE);   [[ -n "$_v" ]] && AUTO_PR_BASE="$_v"
 fi
 
 # ── Validate ────────────────────────────────────────────────────────────────
@@ -180,6 +191,7 @@ if [[ -f "$DOMAIN_DIR/config.sh" ]]; then
   # Exported: measure.sh/guard.sh run as child processes and honor it too
   _v=$(_dcfg MEASURE_TIMEOUT);   [[ -n "$_v" ]] && export MEASURE_TIMEOUT="$_v"
   _v=$(_dcfg EXTRA_TOOLS);       [[ -n "$_v" ]] && EXTRA_TOOLS="$_v"
+  _v=$(_dcfg MAX_TURNS);         [[ -n "$_v" ]] && MAX_TURNS="$_v"
   _v=$(_dcfg SECONDARY_DOMAINS); [[ -n "$_v" ]] && SECONDARY_DOMAINS="$_v"
   # Per-domain overrides; CLI flags win over domain config
   _v=$(_dcfg MODEL);       [[ -n "$_v" ]] && [[ "${_cli_model:-}" != "1" ]] && MODEL="$_v"
@@ -464,7 +476,7 @@ while [[ $GLOBAL_ITER -lt $MAX_ITERATIONS ]]; do
 
   claude_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
     --output-format json \
-    --max-turns 15 \
+    --max-turns "$MAX_TURNS" \
     --allowedTools "$SOSL_TOOLS_MAIN${EXTRA_TOOLS:+ $EXTRA_TOOLS}" \
     --max-budget-usd "$BUDGET_PER_ITER" \
     --model "$MODEL" < /dev/null 2>>"$SOSL_STATE_DIR/claude-stderr.log") || true
@@ -513,17 +525,18 @@ except Exception:
 
   # ── Handle errors ─────────────────────────────────────────────────────────
   if [[ "$is_error" == "true" ]]; then
-    log_err "Claude returned an error. Recording failure."
+    err_subtype=$(claude_error_subtype "$claude_output" "$SOSL_STATE_DIR")
+    log_err "Claude returned an error ($err_subtype). Recording failure."
     git_revert_changes "$WORK_DIR"
     tree_record_failure "$TARGET_DIR" "$node_id" "$ITER_MODE" "${strategy_summary:-Claude error}" "error" "$iter_cost" "$((GLOBAL_ITER + 1))"
-    append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Claude error" "$ITER_MODE" "$strategy_summary"
+    append_experiment "$TARGET_DIR" "$GLOBAL_ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Claude error ($err_subtype)" "$ITER_MODE" "$strategy_summary"
     GLOBAL_ITER=$((GLOBAL_ITER + 1))
     STAGNATION=$((STAGNATION + 1))
     CONSECUTIVE_ERRORS=$((CONSECUTIVE_ERRORS + 1))
     # Errors cost ~$0, so neither the cost breaker nor the budget pre-check
     # would ever stop a dead/logged-out CLI from burning all iterations.
     if [[ $CONSECUTIVE_ERRORS -ge $MAX_CONSECUTIVE_ERRORS ]]; then
-      log_err "$CONSECUTIVE_ERRORS consecutive Claude errors (see $SOSL_STATE_DIR/claude-stderr.log). Aborting run."
+      log_err "$CONSECUTIVE_ERRORS consecutive Claude errors (raw JSON: $SOSL_STATE_DIR/claude-errors.jsonl). Aborting run."
       break
     fi
     continue
@@ -682,7 +695,7 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
 
   claude_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
     --output-format json \
-    --max-turns 15 \
+    --max-turns "$MAX_TURNS" \
     --allowedTools "$SOSL_TOOLS_MAIN${EXTRA_TOOLS:+ $EXTRA_TOOLS}" \
     --max-budget-usd "$BUDGET_PER_ITER" \
     --model "$MODEL" < /dev/null 2>>"$SOSL_STATE_DIR/claude-stderr.log") || true
@@ -733,9 +746,10 @@ except Exception:
 " 2>/dev/null || echo "")
 
   if [[ "$is_error" == "true" ]]; then
-    log_err "Claude returned an error. Skipping iteration."
+    err_subtype=$(claude_error_subtype "$claude_output" "$SOSL_STATE_DIR")
+    log_err "Claude returned an error ($err_subtype). Skipping iteration."
     git_revert_changes "$WORK_DIR"
-    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Claude error" "$ITER_MODE" "$strategy_summary"
+    append_experiment "$TARGET_DIR" "$ITER" "$DOMAIN_NAME" "$BASELINE" "" false "$iter_cost" "Claude error ($err_subtype)" "$ITER_MODE" "$strategy_summary"
     session_update "$TARGET_DIR" "$((ITER + 1))" "$ITER_MODE" "error" "$BASELINE" "" "${strategy_summary:-Claude error}" ""
     STAGNATION=$((STAGNATION + 1))
     CONSECUTIVE_ERRORS=$((CONSECUTIVE_ERRORS + 1))
@@ -743,7 +757,7 @@ except Exception:
     # Errors cost ~$0, so neither the cost breaker nor the budget pre-check
     # would ever stop a dead/logged-out CLI from burning all iterations.
     if [[ $CONSECUTIVE_ERRORS -ge $MAX_CONSECUTIVE_ERRORS ]]; then
-      log_err "$CONSECUTIVE_ERRORS consecutive Claude errors (see $SOSL_STATE_DIR/claude-stderr.log). Aborting run."
+      log_err "$CONSECUTIVE_ERRORS consecutive Claude errors (raw JSON: $SOSL_STATE_DIR/claude-errors.jsonl). Aborting run."
       break
     fi
     continue
@@ -841,6 +855,15 @@ if [[ "$NO_JUDGE" != "true" ]] && [[ "$DRY_RUN" != "true" ]] && [[ ${IMPROVEMENT
   log_bold "═══ Judge Agent Review ═══"
   judge_review "$TARGET_DIR" "$DOMAIN_NAME" "$BRANCH" "${BASELINE:-0}" "${INITIAL_BASELINE:-0}" "${IMPROVEMENTS:-0}" "$TOTAL_COST" "$SEARCH_MODE" || true
   log_bold "══════════════════════════"
+  echo ""
+fi
+
+# ── Auto-PR (after the Judge, so the report can ride along as PR body) ──────
+if [[ "$AUTO_PR" == "true" ]] && [[ "$DRY_RUN" != "true" ]] && [[ ${IMPROVEMENTS:-0} -gt 0 ]]; then
+  echo ""
+  log_bold "═══ Auto-PR ═══"
+  create_auto_pr "$TARGET_DIR" "$DOMAIN_NAME" "$BRANCH" "${INITIAL_BASELINE:-0}" "${BASELINE:-0}" "${IMPROVEMENTS:-0}" || true
+  log_bold "═══════════════"
   echo ""
 fi
 

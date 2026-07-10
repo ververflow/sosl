@@ -1,0 +1,9 @@
+#!/bin/bash
+# Offline stand-in for the GitHub CLI, used by the SOSL test suite.
+# Records every invocation (one line, all args) to $SOSL_FAKE_GH_LOG and
+# answers `pr create` with a fake PR URL. Everything else succeeds silently.
+[[ -n "${SOSL_FAKE_GH_LOG:-}" ]] && printf '%s\n' "$*" >> "$SOSL_FAKE_GH_LOG"
+if [[ "${1:-} ${2:-}" == "pr create" ]]; then
+  echo "https://github.com/example/example/pull/1"
+fi
+exit 0

@@ -3,10 +3,23 @@
 ## Next
 
 ### Ideas
-- [ ] Scheduler install: launchd/cron recipe that starts `sosl-night.sh` on a schedule (the orchestrator exists; the install step is manual)
-- [ ] Auto-PR: after a run with improvements, open a PR with the Judge report as description (`gh pr create`)
 - [ ] GitHub Actions workflow for cloud-based runs (no local machine needed overnight)
 - [ ] Mutation-testing domain (mutmut for Python, Stryker for JS/TS) — coverage can be gamed, mutation score barely
+
+---
+
+## v1.1.0 — Auto-PR + first-production-target lessons (July 10, 2026)
+
+Everything in this release came out of pointing SOSL at its first real production target (a FastAPI backend with a 3,200-test suite) and watching where it cracked.
+
+### What changed
+- **Auto-PR** (`lib/autopr.sh`): after a run with improvements, push the sosl branch and open a PR with the Judge report as its body (`gh pr create`). Opt-in via `AUTO_PR=true` + `AUTO_PR_REPO=owner/repo` (`AUTO_PR_REMOTE`/`AUTO_PR_BASE` optional). Never fatal: push or PR failure logs a warning and leaves the branch local — a GitHub hiccup must not kill an unattended night. Offline scenario s11 covers it with a fake `gh` and a local bare remote.
+- **`MAX_TURNS` config key**: the hardcoded `--max-turns 15` produced `error_max_turns` on a real codebase — reading a 2,000-line conftest alone takes several tool calls. Default stays 15; real projects want 40–60. The per-iteration budget remains the actual brake.
+- **`EXTRA_TOOLS` config key**: the tool allowlist was Node-flavored (npm/npx), so on a Python target the loop could not run pytest or ruff to self-verify. Domain configs can now append grants like `Bash(uv run:*)`. The safe parser gives this key its own strict pattern: the permission grammar needs parens, while `$`, backticks, `;` and quotes stay banned.
+- **Claude-error triage**: on `is_error` the subtype is logged inline and the raw result JSON is appended to `.sosl/claude-errors.jsonl`. A bare "Claude error" pointing at an empty stderr log is undebuggable at 03:00; the subtype (`error_max_turns`, `error_max_budget_usd`, …) names the fix.
+
+### Why this matters
+The offline suite proved the loop's mechanics; the first real target proved the defaults wrong. Budget, turns, and tool grants are now per-project knobs with validated values documented in the example configs, and every Claude failure leaves enough evidence to diagnose the morning after.
 
 ---
 
