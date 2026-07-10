@@ -8,6 +8,7 @@
 #   improve (default)  increment the number in score.txt by 1
 #   noop               change nothing, report success
 #   error              return {"is_error": true}
+#   ratelimit          is_error true, subtype "success", HTTP 429 (Max session limit)
 #   noqa               append a "# noqa" suppression to backend/app.py
 #   selfcommit         improve score.txt but git-commit it directly (bypass test)
 # Extras:
@@ -38,6 +39,11 @@ mode="${SOSL_FAKE_MODE:-improve}"
 case "$mode" in
   error)
     emit true 0 '"simulated CLI failure"'
+    ;;
+  ratelimit)
+    # Max session limit mid-turn: is_error true but subtype "success" and an
+    # HTTP 429 — the shape that fooled the first triage into logging "success".
+    printf '{"type":"result","subtype":"success","is_error":true,"api_error_status":429,"terminal_reason":"api_error","num_turns":9,"total_cost_usd":0.12,"result":"You'"'"'ve hit your session limit reset 11:30pm"}\n'
     ;;
   noop)
     emit false 0.01 '"STRATEGY: considered options, decided no change was needed"'

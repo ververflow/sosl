@@ -544,6 +544,13 @@ except Exception:
     GLOBAL_ITER=$((GLOBAL_ITER + 1))
     STAGNATION=$((STAGNATION + 1))
     CONSECUTIVE_ERRORS=$((CONSECUTIVE_ERRORS + 1))
+    # A usage/session limit won't clear by retrying inside the same window —
+    # every further iteration just burns quota on a rejected call. Stop now
+    # with a clear signal instead of grinding to the consecutive-error cap.
+    if [[ "$err_subtype" == "usage_limit" ]]; then
+      log_err "Claude usage/session limit hit — stopping run (resets on Anthropic's clock, not ours)."
+      break
+    fi
     # Errors cost ~$0, so neither the cost breaker nor the budget pre-check
     # would ever stop a dead/logged-out CLI from burning all iterations.
     if [[ $CONSECUTIVE_ERRORS -ge $MAX_CONSECUTIVE_ERRORS ]]; then
@@ -778,6 +785,13 @@ except Exception:
     STAGNATION=$((STAGNATION + 1))
     CONSECUTIVE_ERRORS=$((CONSECUTIVE_ERRORS + 1))
     ITER=$((ITER + 1))
+    # A usage/session limit won't clear by retrying inside the same window —
+    # every further iteration just burns quota on a rejected call. Stop now
+    # with a clear signal instead of grinding to the consecutive-error cap.
+    if [[ "$err_subtype" == "usage_limit" ]]; then
+      log_err "Claude usage/session limit hit — stopping run (resets on Anthropic's clock, not ours)."
+      break
+    fi
     # Errors cost ~$0, so neither the cost breaker nor the budget pre-check
     # would ever stop a dead/logged-out CLI from burning all iterations.
     if [[ $CONSECUTIVE_ERRORS -ge $MAX_CONSECUTIVE_ERRORS ]]; then

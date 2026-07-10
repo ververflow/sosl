@@ -297,7 +297,20 @@ s13() {
   [[ "$score" == "43" ]] && ok "score improvement preserved (43)" || bad "branch score = '$score'"
 }
 
-all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10 s11 s12 s13"
+s14() {
+  hdr "s14 usage-limit (429) is labeled and stops the run immediately"
+  new_target t14
+  # 5 iterations available, but a usage limit should halt after the FIRST —
+  # not grind to the 3-consecutive-error cap, not run all 5.
+  SOSL_FAKE_MODE=ratelimit run_sosl "$TESTS_DIR/fixture-domain" --max-iterations 5
+  grep -q "usage/session limit hit" "$LOG" && ok "usage limit detected and halted" || bad "no usage-limit stop"
+  grep -q "usage_limit" "$TARGET/.sosl/experiments.jsonl" 2>/dev/null && ok "labeled usage_limit in log (not 'success')" || bad "not labeled usage_limit"
+  local n; n=$(jsonl_count)
+  [[ "$n" == "1" ]] && ok "stopped after 1 iteration (no quota-burning retries)" || bad "ran $n iterations, expected 1"
+  [[ -f "$TARGET/.sosl/claude-errors.jsonl" ]] && ok "raw error JSON persisted" || bad "no claude-errors.jsonl"
+}
+
+all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10 s11 s12 s13 s14"
 if [[ ! -f "$SOSL_DIR/sosl-night.sh" ]]; then
   all="${all/ s10/}"
 fi

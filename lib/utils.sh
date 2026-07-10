@@ -55,19 +55,36 @@ sosl_add_excludes() {
 }
 
 # ── Claude error triage ─────────────────────────────────────────────────────
-# Extract the error subtype from a result JSON and persist the raw JSON to
-# claude-errors.jsonl. "Claude error" alone is undebuggable at 03:00; the
-# subtype (error_max_turns, error_max_budget_usd, ...) names the actual fix.
-# Usage: claude_error_subtype "$claude_output" "$state_dir" → subtype on stdout
+# Classify a failed result JSON and persist the raw JSON to claude-errors.jsonl.
+# "Claude error" alone is undebuggable at 03:00, and the CLI's own `subtype` is
+# "success" even for a mid-turn HTTP 429 (Max session limit), so we look past it
+# at api_error_status and the result text. Returns one label on stdout:
+#   usage_limit     HTTP 429 / session-or-usage-limit text — retrying is futile
+#                   until reset, so the caller should stop the run now
+#   api_error_<n>   other terminal API error (status code n)
+#   error_max_turns / error_max_budget_usd / ... — the CLI's own subtype
+#   unknown | unparseable
+# Usage: claude_error_subtype "$claude_output" "$state_dir" → label on stdout
 claude_error_subtype() {
   local output="$1" state_dir="$2"
   [[ -n "$state_dir" ]] && printf '%s\n' "$output" >> "$state_dir/claude-errors.jsonl" 2>/dev/null
   echo "$output" | python3 -c "
-import json, sys
+import json, re, sys
 try:
-    print(json.loads(sys.stdin.read()).get('subtype', 'unknown'))
+    d = json.loads(sys.stdin.read())
 except Exception:
-    print('unparseable')
+    print('unparseable'); sys.exit()
+status = d.get('api_error_status')
+text = str(d.get('result', '') or '')
+subtype = d.get('subtype', 'unknown')
+if status == 429 or re.search(r'(usage|session|rate).{0,20}limit', text, re.I):
+    print('usage_limit')
+elif d.get('terminal_reason') == 'api_error':
+    print(f'api_error_{status}' if status else 'api_error')
+elif subtype and subtype != 'success':
+    print(subtype)
+else:
+    print(d.get('stop_reason') or 'unknown')
 " 2>/dev/null || echo "unknown"
 }
 
