@@ -173,6 +173,16 @@ bash sosl.sh \
   --dry-run                          # Print prompts, don't call Claude
 ```
 
+Config-file/domain-only keys (no CLI flag):
+
+| Key | Where | What |
+|-----|-------|------|
+| `MAX_TURNS` | config or domain `config.sh` | Agent turns per iteration (default 15 — real codebases want 40-60) |
+| `EXTRA_TOOLS` | domain `config.sh` | Extra tool grants for the loop, e.g. `Bash(uv run:*)` for pytest/ruff self-verification |
+| `MEASURE_TIMEOUT` | domain `config.sh` | Seconds per measure.sh sample (default 120) |
+| `ALLOWED_PATHS` | domain `config.sh` | Comma-separated path prefixes Claude may touch — anything else is a guard fail |
+| `AUTO_PR` + `AUTO_PR_REPO` | config | Open a PR with the Judge report after a run with improvements (opt-in, never fatal) |
+
 ## Search Modes
 
 ### Linear (default)
