@@ -310,7 +310,29 @@ s14() {
   [[ -f "$TARGET/.sosl/claude-errors.jsonl" ]] && ok "raw error JSON persisted" || bad "no claude-errors.jsonl"
 }
 
-all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10 s11 s12 s13 s14"
+s15() {
+  hdr "s15 config parser strips inline comments regardless of spacing"
+  # The live bug: KEY="value" # comment with a SINGLE space kept the comment
+  # and the quotes, feeding the Judge a model name of '"claude-sonnet-5" # ...'
+  # that failed instantly. Every spacing/quoting variant must yield clean values.
+  source "$SOSL_DIR/lib/utils.sh"
+  local cfg="$BASE/s15.conf"
+  printf '%s\n' \
+    'JUDGE_MODEL="claude-sonnet-5" # one space before hash' \
+    'MODEL="claude-haiku-4-5"      # many spaces before hash' \
+    'EXTRA_TOOLS="Bash(uv run:*)"' \
+    'MAX_TURNS=50 # unquoted with comment' \
+    'BASE_REF=origin/main' > "$cfg"
+  local json; json="$(parse_config "$cfg")" || { bad "parse_config errored"; return; }
+  _g() { echo "$json" | python3 -c "import json,sys;print(json.loads(sys.stdin.read()).get(sys.argv[1],''))" "$1"; }
+  [[ "$(_g JUDGE_MODEL)" == "claude-sonnet-5" ]] && ok "single-space comment stripped, quotes gone" || bad "JUDGE_MODEL='$(_g JUDGE_MODEL)'"
+  [[ "$(_g MODEL)" == "claude-haiku-4-5" ]] && ok "many-space comment stripped" || bad "MODEL='$(_g MODEL)'"
+  [[ "$(_g EXTRA_TOOLS)" == "Bash(uv run:*)" ]] && ok "parens preserved, no false comment strip" || bad "EXTRA_TOOLS='$(_g EXTRA_TOOLS)'"
+  [[ "$(_g MAX_TURNS)" == "50" ]] && ok "unquoted comment stripped" || bad "MAX_TURNS='$(_g MAX_TURNS)'"
+  [[ "$(_g BASE_REF)" == "origin/main" ]] && ok "unquoted no-comment value intact" || bad "BASE_REF='$(_g BASE_REF)'"
+}
+
+all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10 s11 s12 s13 s14 s15"
 if [[ ! -f "$SOSL_DIR/sosl-night.sh" ]]; then
   all="${all/ s10/}"
 fi

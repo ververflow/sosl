@@ -159,15 +159,22 @@ with open(config_file, encoding='utf-8') as f:
         if key not in ALLOWED_KEYS:
             print(f"ERROR: line {lineno}: unknown key '{key}'", file=sys.stderr)
             sys.exit(1)
-        # Strip inline comments (before quote stripping — comments are outside quotes)
-        if '  #' in value:
-            value = value[:value.index('  #')].rstrip()
-        elif '\t#' in value:
-            value = value[:value.index('\t#')].rstrip()
-        # Strip surrounding quotes
-        if (value.startswith('"') and value.endswith('"')) or \
-           (value.startswith("'") and value.endswith("'")):
-            value = value[1:-1]
+        value = value.strip()
+        # Quoted value: take the quoted content, discard whatever trails the
+        # closing quote (a comment). The old rule only stripped a comment
+        # preceded by 2+ spaces or a tab, so `KEY="x" # c` with ONE space
+        # kept the comment AND the quotes — a live bug that fed the Judge a
+        # model name of `"claude-sonnet-5" # ...` and made it fail instantly.
+        if value[:1] in ('"', "'"):
+            q = value[0]
+            end = value.find(q, 1)
+            if end != -1:
+                value = value[1:end]
+            else:
+                value = value[1:]            # unbalanced quote, best effort
+        else:
+            # Unquoted: a comment starts at the first whitespace-then-#.
+            value = re.split(r'\s+#', value, maxsplit=1)[0].strip()
         # Reject shell metacharacters (EXTRA_TOOLS has its own allowlist pattern)
         if key == 'EXTRA_TOOLS':
             if not EXTRA_TOOLS_PATTERN.fullmatch(value):
