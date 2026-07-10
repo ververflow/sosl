@@ -44,7 +44,7 @@ judge_review() {
   git_log=$(git -C "$WORK_DIR" log --oneline -30 2>/dev/null || echo "(no git log available)")
 
   local git_diff
-  git_diff=$(git -C "$TARGET_DIR" diff "main..$branch" 2>/dev/null | head -1000 || echo "(no diff available)")
+  git_diff=$(git -C "$TARGET_DIR" diff "${SOSL_BASE_REF:-main}..$branch" 2>/dev/null | head -1000 || echo "(no diff available)")
 
   # ── Build prompt ─────────────────────────────────────────────────────────
   local prompt
@@ -65,14 +65,17 @@ judge_review() {
   prompt="${prompt//\{\{GIT_DIFF\}\}/$git_diff}"
 
   # ── Call Judge (read-only tools) ─────────────────────────────────────────
-  log "Calling Judge Agent ($MODEL)..."
+  # A separate JUDGE_MODEL lets cheap loop models get a stronger reviewer.
+  local judge_model="${JUDGE_MODEL:-$MODEL}"
+  log "Calling Judge Agent ($judge_model)..."
 
   local judge_output
   judge_output=$(cd "$WORK_DIR" && claude -p "$prompt" \
     --output-format json \
     --max-turns 10 \
-    --allowedTools "Read Glob Grep Bash(git:status) Bash(git:log) Bash(git:diff) Bash(git:show)" \
-    --model "$MODEL" 2>/dev/null || echo '{"is_error": true}')
+    --allowedTools "Read Glob Grep Bash(git status:*) Bash(git log:*) Bash(git diff:*) Bash(git show:*)" \
+    --model "$judge_model" < /dev/null 2>>"$sosl_state_dir/claude-stderr.log") || true
+  [[ -n "$judge_output" ]] || judge_output='{"is_error": true}'
 
   # ── Parse verdict ────────────────────────────────────────────────────────
   local verdict

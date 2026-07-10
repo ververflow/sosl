@@ -4,16 +4,32 @@
 # Any failure = immediate revert, no measurement needed
 
 # ── Stack detection ────────────────────────────────────────────────────────
-# Auto-detect the project's tech stack from marker files.
-# Usage: detect_stack /path/to/project → prints "node", "python", "rust", "go", or "unknown"
+# Detect ALL of the project's stacks from marker files (monorepo-aware, one
+# directory level deep). Returns a comma-separated list: "node,python".
+# An explicit STACK env/config override wins, as escape hatch to narrow or
+# force the list. Every detected stack's guards run — first-match-only would
+# leave e.g. a python backend unguarded behind a frontend/package.json.
 detect_stack() {
   local dir="$1"
-  # Check subdirectories too (monorepo: frontend/package.json)
-  [[ -f "$dir/package.json" ]] || [[ -f "$dir/frontend/package.json" ]] && echo "node" && return
-  [[ -f "$dir/pyproject.toml" ]] || [[ -f "$dir/setup.py" ]] || [[ -f "$dir/requirements.txt" ]] && echo "python" && return
-  [[ -f "$dir/Cargo.toml" ]] && echo "rust" && return
-  [[ -f "$dir/go.mod" ]] && echo "go" && return
-  echo "unknown"
+  if [[ -n "${STACK:-}" ]]; then
+    echo "$STACK"
+    return
+  fi
+  local found=()
+  if [[ -f "$dir/package.json" ]] || compgen -G "$dir/*/package.json" >/dev/null; then
+    found+=("node")
+  fi
+  if [[ -f "$dir/pyproject.toml" ]] || [[ -f "$dir/setup.py" ]] || [[ -f "$dir/requirements.txt" ]] \
+     || compgen -G "$dir/*/pyproject.toml" >/dev/null; then
+    found+=("python")
+  fi
+  [[ -f "$dir/Cargo.toml" ]] && found+=("rust")
+  [[ -f "$dir/go.mod" ]] && found+=("go")
+  if [[ ${#found[@]} -eq 0 ]]; then
+    echo "unknown"
+  else
+    (IFS=','; echo "${found[*]}")
+  fi
 }
 
 # Run all guard layers in order
@@ -22,6 +38,11 @@ detect_stack() {
 run_guards() {
   local guard_script="$1"
   local target_dir="$2"
+
+  # Make untracked files visible (with content) to every diff-based check
+  # below: file count, scope, deletions, suppressions, deps. Reverted by the
+  # `git reset` in git_revert_changes; committed via `git add -A`.
+  git -C "$target_dir" add -N -- . ':(exclude).sosl' ':(exclude).sosl-worktrees' 2>/dev/null || true
 
   # ══ Layer 1: Universal guards (any stack) ════════════════════════════════
 
@@ -86,21 +107,28 @@ print(max(0, deletions - insertions))
 
   # ══ Layer 2: Stack-specific guards (auto-detected) ══════════════════════
 
-  local detected_stack
-  detected_stack=$(detect_stack "$target_dir")
+  local detected_stacks
+  detected_stacks=$(detect_stack "$target_dir")
   local guard_dir
   guard_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/guards"
 
-  if [[ -f "$guard_dir/${detected_stack}.sh" ]]; then
-    source "$guard_dir/${detected_stack}.sh"
-    local stack_output
-    stack_output=$(run_stack_guards "$target_dir" 2>&1)
-    local stack_exit=$?
+  local _stack _stack_list stack_output stack_exit
+  IFS=',' read -ra _stack_list <<< "$detected_stacks"
+  for _stack in "${_stack_list[@]}"; do
+    [[ -f "$guard_dir/${_stack}.sh" ]] || continue
+    # Subshell: every guards file defines run_stack_guards; isolate so the
+    # same-named functions don't overwrite each other across stacks.
+    stack_output=$(
+      # shellcheck source=/dev/null
+      source "$guard_dir/${_stack}.sh"
+      run_stack_guards "$target_dir" 2>&1
+    )
+    stack_exit=$?
     if [[ $stack_exit -ne 0 ]]; then
-      echo "$stack_output"
+      echo "[$_stack] $stack_output"
       return 1
     fi
-  fi
+  done
 
   # ══ Layer 3: Domain-specific guard (heavier: tsc, build, tests) ═════════
   # Security: run guards with a clean PATH that excludes the target's

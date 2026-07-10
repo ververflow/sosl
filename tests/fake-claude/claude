@@ -1,0 +1,61 @@
+#!/bin/bash
+# Offline stand-in for the `claude` CLI, used by the SOSL test suite.
+# Mimics `claude -p "<prompt>" --output-format json`: reads the prompt from argv,
+# optionally edits files in the current directory (sosl runs it with cwd=worktree),
+# and prints a result JSON on stdout. Ignores all other flags, like a worst-case CLI.
+#
+# Modes via SOSL_FAKE_MODE:
+#   improve (default)  increment the number in score.txt by 1
+#   noop               change nothing, report success
+#   error              return {"is_error": true}
+#   noqa               append a "# noqa" suppression to backend/app.py
+# Extras:
+#   SOSL_FAKE_NEWFILE=1        also create a new file (default notes.md)
+#   SOSL_FAKE_NEWFILE_PATH=..  path for that new file (out-of-scope tests)
+# Judge calls are detected by the verdict marker from the judge directive and
+# always answered with APPROVE.
+
+prompt=""
+prev=""
+for arg in "$@"; do
+  case "$prev" in
+    -p|--print) prompt="$arg" ;;
+  esac
+  prev="$arg"
+done
+
+emit() { # emit <is_error> <cost> <result-json-string>
+  printf '{"type":"result","subtype":"success","is_error":%s,"total_cost_usd":%s,"num_turns":1,"result":%s}\n' "$1" "$2" "$3"
+}
+
+if [[ "$prompt" == *"Decision:"* ]]; then
+  emit false 0.02 '"Reviewed the branch commit by commit. Decision: [APPROVE] - scoped, legitimate changes."'
+  exit 0
+fi
+
+mode="${SOSL_FAKE_MODE:-improve}"
+case "$mode" in
+  error)
+    emit true 0 '"simulated CLI failure"'
+    ;;
+  noop)
+    emit false 0.01 '"STRATEGY: considered options, decided no change was needed"'
+    ;;
+  noqa)
+    if [[ -f backend/app.py ]]; then
+      printf 'y = 1  # noqa\n' >> backend/app.py
+    fi
+    emit false 0.01 '"STRATEGY: silenced a linter finding with a suppression comment"'
+    ;;
+  improve|*)
+    if [[ -f score.txt ]]; then
+      n="$(tr -cd '0-9' < score.txt)"
+      echo "$(( n + 1 ))" > score.txt
+    fi
+    if [[ "${SOSL_FAKE_NEWFILE:-0}" == "1" ]]; then
+      echo "supporting note" > "${SOSL_FAKE_NEWFILE_PATH:-notes.md}"
+    fi
+    emit false 0.01 '"Ran git status: clean apart from my edit. STRATEGY: incremented score.txt by exactly 1"'
+    ;;
+esac
+exit 0
