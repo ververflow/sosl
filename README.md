@@ -181,7 +181,8 @@ Config-file/domain-only keys (no CLI flag):
 | `EXTRA_TOOLS` | domain `config.sh` | Extra tool grants for the loop, e.g. `Bash(uv run:*)` for pytest/ruff self-verification |
 | `MEASURE_TIMEOUT` | domain `config.sh` | Seconds per measure.sh sample (default 120) |
 | `ALLOWED_PATHS` | domain `config.sh` | Comma-separated path prefixes Claude may touch — anything else is a guard fail |
-| `AUTO_PR` + `AUTO_PR_REPO` | config | Open a PR with the Judge report after a run with improvements (opt-in, never fatal) |
+| `AUTO_PR` + `AUTO_PR_REPO` | config | Open a PR with the Judge report after a run with improvements (opt-in, never fatal; skipped when the Judge verdict is REJECT) |
+| `SOSL_TEST_QUALITY_STRICT` | env | `1` makes the test-quality guard also hard-fail assertionless tests (default: warn only, since a "must not raise" test is legit) |
 
 ## Search Modes
 

@@ -70,6 +70,14 @@ echo "GUARD PASS"
 exit 0
 ```
 
+SOSL exports a few variables your guard can use: `SOSL_HOME` (the SOSL install root), `SOSL_STATE_DIR` (the target's `.sosl/`), and `SOSL_WT_LINKS`. For a test-coverage domain, reuse the framework's assertion-quality check — it rejects hollow tests that raise coverage without testing behaviour (trivial `assert True`, `walk_packages` import-farming, `xfail`, broad exception-swallowing):
+
+```bash
+if [[ -n "${SOSL_HOME:-}" ]] && [[ -f "$SOSL_HOME/lib/guards/py_test_quality.py" ]]; then
+  python3 "$SOSL_HOME/lib/guards/py_test_quality.py" "$TARGET_DIR" || exit 1
+fi
+```
+
 ## Step 4: Write directive.md
 
 See [writing-directives.md](writing-directives.md) for the full guide. Minimum template:

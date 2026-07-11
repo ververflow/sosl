@@ -82,7 +82,9 @@ Loop completes → write SUMMARY.md
 
 The Judge has no context from the optimization run — it sees everything fresh. It checks:
 score validity, scope compliance, guard patterns, code completeness, session learning,
-and search quality (tree mode). Skip with `--no-judge`.
+test integrity (coverage domains), and search quality (tree mode). Skip with `--no-judge`.
+The verdict is not advisory-only: when `AUTO_PR` is set, a **REJECT blocks the auto-PR**
+and leaves the branch local for a human.
 
 ### Level 3: SOSL Night Run (macro)
 One domain, one branch, one overnight session:
