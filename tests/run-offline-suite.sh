@@ -315,7 +315,10 @@ s15() {
   # The live bug: KEY="value" # comment with a SINGLE space kept the comment
   # and the quotes, feeding the Judge a model name of '"claude-sonnet-5" # ...'
   # that failed instantly. Every spacing/quoting variant must yield clean values.
-  source "$SOSL_DIR/lib/utils.sh"
+  # utils.sh runs `set -eo pipefail`; sourcing it here would leak set -e into the
+  # suite shell and abort any later scenario on a non-fatal non-zero exit. Contain
+  # it: keep -u and pipefail (the suite's own flags), drop the leaked -e.
+  source "$SOSL_DIR/lib/utils.sh"; set +e
   local cfg="$BASE/s15.conf"
   printf '%s\n' \
     'JUDGE_MODEL="claude-sonnet-5" # one space before hash' \
@@ -332,7 +335,55 @@ s15() {
   [[ "$(_g BASE_REF)" == "origin/main" ]] && ok "unquoted no-comment value intact" || bad "BASE_REF='$(_g BASE_REF)'"
 }
 
-all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10 s11 s12 s13 s14 s15"
+s16() {
+  hdr "s16 all-samples-fail reverts and the loop continues, never aborts the run [B1]"
+  # The bug: measure_robust returns non-zero when every sample fails; under
+  # `set -eo pipefail` the bare `measure_result=$(...)` assignment tripped set -e
+  # and the EXIT trap killed the whole run. One bad change (or a DB hiccup /
+  # timeout on a loaded night) must revert that iteration and keep going.
+  new_target t16
+  run_sosl "$TESTS_DIR/fixture-domain-measurefail" --max-iterations 2
+  [[ $RC -eq 0 ]] && ok "clean exit despite failing measurement" || bad "rc=$RC — run aborted instead of reverting (see $LOG)"
+  python3 - "$TARGET/.sosl/last-run.json" <<'PYEOF' && ok "manifest: completed, 0 improvements" || bad "manifest missing/wrong (run likely aborted)"
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["status"] == "completed", d
+assert d["improvements"] == 0, d
+PYEOF
+  local n; n=$(jsonl_count)
+  [[ "$n" == "2" ]] && ok "both iterations ran (reverted, not aborted)" || bad "ran $n iterations, expected 2"
+  local br; br="$(sosl_branch fixture-domain-measurefail)"
+  local c=0; [[ -n "$br" ]] && c=$(git -C "$TARGET" log --oneline "$br" 2>/dev/null | grep -c "sosl(" || true)
+  [[ "$c" == "0" ]] && ok "no commits landed (nothing measured as improvement)" || bad "unexpected $c commits"
+}
+
+s17() {
+  hdr "s17 test-quality guard catches hollow/farming/xfail/suppress tests, spares real ones [G1]"
+  local repo="$BASE/tq"
+  rm -rf "$repo"; mkdir -p "$repo/tests"
+  ( cd "$repo" && git init -q && git config user.email t@t && git config user.name t )
+  printf 'def test_base():\n    assert 1 == 1\n' > "$repo/tests/test_base.py"
+  ( cd "$repo" && git add -A && git commit -qm init )
+  # legit tests — must NOT be flagged
+  printf 'def test_real():\n    assert 2 + 2 == 4\n\ndef test_raises():\n    import pytest\n    with pytest.raises(ValueError):\n        int("x")\n' > "$repo/tests/test_good.py"
+  # gaming tests — each must be flagged
+  printf 'def test_hollow():\n    do_work()\n\ndef do_work():\n    return 1\n' > "$repo/tests/test_hollow.py"
+  printf 'def test_trivial():\n    compute()\n    assert True\n\ndef compute():\n    return 1\n' > "$repo/tests/test_trivial.py"
+  printf 'import pkgutil\n\ndef test_farm():\n    list(pkgutil.walk_packages(["src"]))\n' > "$repo/tests/test_farm.py"
+  # a fixture named test_* must NOT be treated as a test (real-world false positive)
+  printf 'import pytest\n\n@pytest.fixture\ndef test_thing():\n    return object()\n' > "$repo/tests/test_fixture.py"
+  ( cd "$repo" && git add -N . )   # mimic run_guards' intent-to-add so new files are diff-visible
+  local out rc
+  out="$(python3 "$SOSL_DIR/lib/guards/py_test_quality.py" "$repo" 2>&1)"; rc=$?
+  [[ $rc -eq 1 ]] && ok "guard fails on gaming tests (exit 1)" || bad "expected exit 1, got $rc ($out)"
+  grep -q "test_trivial" <<<"$out" && ok "hard-flagged trivial-assert test" || bad "missed trivial-assert test"
+  grep -q "coverage farming" <<<"$out" && ok "hard-flagged import farming" || bad "missed import farming"
+  grep -q "WARN.*test_hollow" <<<"$out" && ok "warned on assertionless test (must-not-raise is legit)" || bad "no warn for hollow test"
+  grep -qE "test_real|test_raises" <<<"$out" && bad "false positive on real tests" || ok "real tests not flagged"
+  grep -q "test_thing" <<<"$out" && bad "flagged a @pytest.fixture as a test" || ok "fixtures excluded (no false positive)"
+}
+
+all="s01 s02 s03 s04 s05 s06 s07 s08 s09 s10 s11 s12 s13 s14 s15 s16 s17"
 if [[ ! -f "$SOSL_DIR/sosl-night.sh" ]]; then
   all="${all/ s10/}"
 fi

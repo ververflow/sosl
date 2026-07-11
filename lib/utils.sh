@@ -264,14 +264,14 @@ git_revert_changes() {
   # Unstage first: run_guards stages untracked files with intent-to-add so the
   # diff-based checks can see them; reset returns those to plain untracked.
   git -C "$target" reset -q 2>/dev/null || true
-  git -C "$target" checkout -- .
+  git -C "$target" checkout -- . 2>/dev/null || true
   # Exclude .sosl/ from clean — it contains experiment log and checkpoints.
   # Also spare the infra symlinks SOSL planted (SOSL_WT_LINKS): cleaning them
   # away would force a full venv/node_modules rebuild on the next measure.
   local _clean_args=(-fd --exclude=.sosl)
   local _l
   for _l in ${SOSL_WT_LINKS:-}; do _clean_args+=(--exclude="/$_l"); done
-  git -C "$target" clean "${_clean_args[@]}" > /dev/null 2>&1
+  git -C "$target" clean "${_clean_args[@]}" > /dev/null 2>&1 || true
 }
 
 git_commit_sosl() {

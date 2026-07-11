@@ -22,6 +22,7 @@ lib/
     python.sh            # Python: noqa, type:ignore, pyproject.toml
     rust.sh              # Rust: #[allow], Cargo.toml
     go.sh                # Go: //nolint, go.mod
+    py_test_quality.py   # AST check: reject hollow/gaming tests (coverage domains)
   checkpoint.sh          # save/load/clear checkpoint for crash recovery
   annotate.sh            # JSONL experiment log + summary generation
   temperature.sh         # Scope guidance: EXPLORATION → REFINEMENT → POLISHING
@@ -103,6 +104,12 @@ Scores vary 20-30 points on the same code depending on system load, server warmu
 
 ### Directive must steer away from risky patterns
 Add a "completeness rule" to every directive: all imports must resolve, all callers must be updated, prefer in-place optimizations over file restructuring. Claude routinely creates incomplete refactors.
+
+### A coverage metric rewards executed lines, not tested behaviour
+The pattern guards (noqa/type:ignore/deletion) never check whether a test asserts anything, so a hollow test — `assert True`, an import-farming loop (`walk_packages`), `xfail` that runs and banks coverage, or `suppress(Exception)` — passes every guard and raises the score. `lib/guards/py_test_quality.py` (AST) hard-fails the unambiguous gaming and warns on assertionless tests (a legit "must not raise" test is shape-identical, so it is surfaced for the Judge, never auto-reverted). Wire it into coverage domains via `$SOSL_HOME/lib/guards/py_test_quality.py`. Set `SOSL_TEST_QUALITY_STRICT=1` only where every test must carry an explicit assertion.
+
+### The Judge must gate, not just opine
+The Judge verdict (`lib/judge.sh`) is wired into auto-PR: a REJECT blocks the PR. It is still the *last* line — a pre-commit guard beats a post-hoc reviewer — but it is no longer advisory-only. Keep `JUDGE_MODEL` a stronger model than the loop model, or it reviews its own tricks.
 
 ### Watch for Goodhart's Law
 If the score improves but the code is broken, the metric is being gamed. Example: Lighthouse score went up because a broken import meant less JavaScript loaded. The contra-metric guards (tsc, build, import check) exist to catch this.

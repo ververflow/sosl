@@ -227,6 +227,10 @@ IMPROVEMENTS=0
 STAGNATION=0
 CONSECUTIVE_ERRORS=0
 
+# SOSL install root — exported so any domain guard (shipped or project-local)
+# can reach framework helpers, e.g. lib/guards/py_test_quality.py.
+export SOSL_HOME="$SCRIPT_DIR"
+
 # .sosl/ lives in the ORIGINAL target dir (not the worktree)
 # Exported so measure.sh/guard.sh can write audit details there
 export SOSL_STATE_DIR="$TARGET_DIR/.sosl"
@@ -268,6 +272,35 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# (Re)populate and export SOSL_WT_LINKS for the worktree, planting any missing
+# infra symlinks (node_modules, .venv). Idempotent — safe on a fresh start AND on
+# --resume, where the links already exist from the interrupted run but the
+# variable would otherwise be empty (B2), causing the scope guard to flag them and
+# the next revert's `git clean` to delete them.
+plant_wt_links() {
+  SOSL_WT_LINKS=""
+  local nm_dir _relative _wt_parent _venv_dir _wt_target
+  for nm_dir in $(find "$TARGET_DIR" -maxdepth 3 -name "node_modules" -type d 2>/dev/null); do
+    _relative="${nm_dir#"$TARGET_DIR"/}"
+    _wt_parent="$WORK_DIR/$(dirname "$_relative")"
+    if [[ -d "$_wt_parent" ]]; then
+      if [[ ! -e "$_wt_parent/node_modules" ]]; then
+        ln -s "$nm_dir" "$_wt_parent/node_modules" 2>/dev/null && log "Linked: $_relative"
+      fi
+      [[ -L "$_wt_parent/node_modules" ]] && SOSL_WT_LINKS="$SOSL_WT_LINKS $_relative"
+    fi
+  done
+  for _venv_dir in "$TARGET_DIR"/.venv "$TARGET_DIR"/backend/.venv; do
+    if [[ -d "$_venv_dir" ]]; then
+      _relative="${_venv_dir#"$TARGET_DIR"/}"
+      _wt_target="$WORK_DIR/$_relative"
+      [[ ! -e "$_wt_target" ]] && ln -s "$_venv_dir" "$_wt_target" 2>/dev/null
+      [[ -L "$_wt_target" ]] && SOSL_WT_LINKS="$SOSL_WT_LINKS $_relative"
+    fi
+  done
+  export SOSL_WT_LINKS
+}
+
 # ── Resume or fresh start ───────────────────────────────────────────────────
 ITER=0
 
@@ -285,6 +318,11 @@ if [[ "$RESUME" == true ]]; then
       log_err "Worktree not found: $WORK_DIR (cannot resume)"
       exit 1
     fi
+    # Repopulate SOSL_WT_LINKS so guards/reverts spare the infra symlinks (B2),
+    # then discard any half-finished edits left by the interrupted iteration so
+    # they can't be bundled into the next commit (B3).
+    plant_wt_links
+    git_revert_changes "$WORK_DIR"
   else
     log_warn "No checkpoint found for domain '$DOMAIN_NAME'. Starting fresh."
     RESUME=false
@@ -304,35 +342,13 @@ if [[ "$RESUME" == false ]]; then
   log_ok "Created worktree: $WORK_DIR (branch: $BRANCH, base: ${BASE_REF:-HEAD})"
   log "You can keep working on main in $TARGET_DIR"
 
-  # Symlink node_modules from original to worktree (worktrees don't share them).
-  # Track every link we plant: gitignore patterns like `node_modules/` or
-  # `.venv/` match directories only, NOT symlinks — without an explicit
-  # exclude, git sees the link as untracked, the scope guard fails on
-  # infrastructure SOSL itself created, add -A would commit it, and the
-  # revert's git clean would delete it.
-  SOSL_WT_LINKS=""
-  for nm_dir in $(find "$TARGET_DIR" -maxdepth 3 -name "node_modules" -type d 2>/dev/null); do
-    _relative="${nm_dir#$TARGET_DIR/}"
-    _wt_parent="$WORK_DIR/$(dirname "$_relative")"
-    if [[ -d "$_wt_parent" ]] && [[ ! -e "$_wt_parent/node_modules" ]]; then
-      ln -s "$nm_dir" "$_wt_parent/node_modules" 2>/dev/null && {
-        log "Linked: $_relative"
-        SOSL_WT_LINKS="$SOSL_WT_LINKS $_relative"
-      }
-    fi
-  done
-  # Also link Python venv if present
-  for _venv_dir in "$TARGET_DIR"/.venv "$TARGET_DIR"/backend/.venv; do
-    if [[ -d "$_venv_dir" ]]; then
-      _relative="${_venv_dir#$TARGET_DIR/}"
-      _wt_target="$WORK_DIR/$_relative"
-      if [[ ! -e "$_wt_target" ]]; then
-        ln -s "$_venv_dir" "$_wt_target" 2>/dev/null && \
-          SOSL_WT_LINKS="$SOSL_WT_LINKS $_relative"
-      fi
-    fi
-  done
-  export SOSL_WT_LINKS
+  # Symlink node_modules/.venv from original into the worktree (worktrees don't
+  # share them) and record them in SOSL_WT_LINKS. Gitignore patterns like
+  # `node_modules/` or `.venv/` match directories only, NOT symlinks — without an
+  # explicit exclude, git sees the link as untracked, the scope guard fails on
+  # infrastructure SOSL itself created, add -A would commit it, and the revert's
+  # git clean would delete it.
+  plant_wt_links
 
   # Health check
   if [[ -n "$HEALTH_CHECK_URL" ]]; then
@@ -349,7 +365,7 @@ if [[ "$RESUME" == false ]]; then
   baseline_result=$(measure_robust "$MEASURE_SCRIPT" "$WORK_DIR" "$SAMPLES")
   BASELINE=$(echo "$baseline_result" | awk '{print $1}')
   NOISE_FLOOR=$(echo "$baseline_result" | awk '{print $2}')
-  log_ok "Baseline: ${BOLD}$BASELINE${NC} (noise floor: $NOISE_FLOOR)"
+  log_ok "Baseline: ${BOLD}$BASELINE${NC} (measured noise/MAD: $NOISE_FLOOR)"
 fi
 INITIAL_BASELINE="$BASELINE"
 
@@ -370,6 +386,11 @@ if [[ -z "${NOISE_FLOOR:-}" ]]; then
   NOISE_FLOOR=$(echo "$nf_result" | awk '{print $2}')
 fi
 
+# Effective commit threshold: an improvement must beat max(MAD*1.5, MIN_NOISE_FLOOR).
+# This is the number that actually gates commits — display it so "noise 0.0" (a
+# clean single-sample MAD) no longer reads as "any delta counts" (D1).
+EFFECTIVE_FLOOR=$(python3 -c "print(round(max(float('${NOISE_FLOOR:-0}')*1.5, float('${MIN_NOISE_FLOOR:-0.5}')), 3))")
+
 # Initialize session document (skip on resume — session.md already exists)
 if [[ "$RESUME" == false ]]; then
   session_init "$TARGET_DIR" "$DOMAIN_NAME" "$BASELINE"
@@ -380,7 +401,7 @@ log_bold "═══ Starting SOSL Loop ═══"
 log "Domain:     $DOMAIN_NAME"
 log "Target:     $TARGET_DIR"
 log "Baseline:   $BASELINE"
-log "Noise:      $NOISE_FLOOR"
+log "Noise:      $NOISE_FLOOR (MAD) — commit needs Δ > $EFFECTIVE_FLOOR"
 log "Max iter:   $MAX_ITERATIONS"
 log "Max hours:  $MAX_HOURS"
 log "Max cost:   \$$MAX_COST_USD"
@@ -463,6 +484,8 @@ while [[ $GLOBAL_ITER -lt $MAX_ITERATIONS ]]; do
     guard_error=$(tree_get_last_guard_error "$TARGET_DIR" "$node_id")
   fi
   mode_guidance=$(get_mode_guidance "$ITER_MODE" "$guard_error")
+  retry_hint=$(get_retry_hint "$TARGET_DIR")
+  [[ -n "$retry_hint" ]] && mode_guidance="$mode_guidance"$'\n\n'"$retry_hint"
   log "Mode: ${BOLD}$ITER_MODE${NC} | Score: $BASELINE"
 
   # ── Build prompt (tree-scoped session) ────────────────────────────────────
@@ -598,7 +621,10 @@ except Exception:
 
   # ── Measure ───────────────────────────────────────────────────────────────
   log "Measuring ($SAMPLES samples)..."
-  measure_result=$(measure_robust "$MEASURE_SCRIPT" "$WORK_DIR" "$SAMPLES")
+  # A total measurement failure (all samples errored) returns non-zero; under
+  # `set -e` a bare assignment would abort the whole run. Fall back to a 0 score
+  # so this iteration reverts and the loop continues (B1).
+  measure_result=$(measure_robust "$MEASURE_SCRIPT" "$WORK_DIR" "$SAMPLES") || measure_result="0 0"
   new_score=$(echo "$measure_result" | awk '{print $1}')
   new_noise=$(echo "$measure_result" | awk '{print $2}')
   log "Score: $BASELINE → $new_score"
@@ -702,6 +728,8 @@ while [[ $ITER -lt $MAX_ITERATIONS ]]; do
     guard_error=$(get_last_guard_error "$TARGET_DIR")
   fi
   mode_guidance=$(get_mode_guidance "$ITER_MODE" "$guard_error")
+  retry_hint=$(get_retry_hint "$TARGET_DIR")
+  [[ -n "$retry_hint" ]] && mode_guidance="$mode_guidance"$'\n\n'"$retry_hint"
   log "Mode: ${BOLD}$ITER_MODE${NC}"
 
   # ── Build prompt ──────────────────────────────────────────────────────────
@@ -840,7 +868,10 @@ except Exception:
 
   # ── Measure ───────────────────────────────────────────────────────────────
   log "Measuring ($SAMPLES samples)..."
-  measure_result=$(measure_robust "$MEASURE_SCRIPT" "$WORK_DIR" "$SAMPLES")
+  # A total measurement failure (all samples errored) returns non-zero; under
+  # `set -e` a bare assignment would abort the whole run. Fall back to a 0 score
+  # so this iteration reverts and the loop continues (B1).
+  measure_result=$(measure_robust "$MEASURE_SCRIPT" "$WORK_DIR" "$SAMPLES") || measure_result="0 0"
   new_score=$(echo "$measure_result" | awk '{print $1}')
   log "Score: $BASELINE → $new_score"
 
@@ -900,21 +931,35 @@ if [[ "$FINALIZE" == "true" ]] && [[ "$DRY_RUN" != "true" ]] && [[ ${IMPROVEMENT
 fi
 
 # ── Judge Agent review ─────────────────────────────────────────────────────
+# Verdict codes: 0=APPROVE, 1=REQUEST CHANGES, 2=REJECT, 3=unclear. Default 0 so
+# that with --no-judge the auto-PR gate below stays open.
+JUDGE_VERDICT_CODE=0
 if [[ "$NO_JUDGE" != "true" ]] && [[ "$DRY_RUN" != "true" ]] && [[ ${IMPROVEMENTS:-0} -gt 0 ]]; then
   echo ""
   log_bold "═══ Judge Agent Review ═══"
-  judge_review "$TARGET_DIR" "$DOMAIN_NAME" "$BRANCH" "${BASELINE:-0}" "${INITIAL_BASELINE:-0}" "${IMPROVEMENTS:-0}" "$TOTAL_COST" "$SEARCH_MODE" || true
+  if judge_review "$TARGET_DIR" "$DOMAIN_NAME" "$BRANCH" "${BASELINE:-0}" "${INITIAL_BASELINE:-0}" "${IMPROVEMENTS:-0}" "$TOTAL_COST" "$SEARCH_MODE"; then
+    JUDGE_VERDICT_CODE=0
+  else
+    JUDGE_VERDICT_CODE=$?
+  fi
   log_bold "══════════════════════════"
   echo ""
 fi
 
 # ── Auto-PR (after the Judge, so the report can ride along as PR body) ──────
+# The Judge is no longer advisory-only: a REJECT (2) blocks the auto-PR so a
+# change the reviewer rejected is never pushed unattended (J0). The branch is
+# left local for a human to inspect.
 if [[ "$AUTO_PR" == "true" ]] && [[ "$DRY_RUN" != "true" ]] && [[ ${IMPROVEMENTS:-0} -gt 0 ]]; then
-  echo ""
-  log_bold "═══ Auto-PR ═══"
-  create_auto_pr "$TARGET_DIR" "$DOMAIN_NAME" "$BRANCH" "${INITIAL_BASELINE:-0}" "${BASELINE:-0}" "${IMPROVEMENTS:-0}" || true
-  log_bold "═══════════════"
-  echo ""
+  if [[ "$JUDGE_VERDICT_CODE" == "2" ]]; then
+    log_warn "Judge verdict was REJECT — skipping auto-PR. Branch left local: $BRANCH"
+  else
+    echo ""
+    log_bold "═══ Auto-PR ═══"
+    create_auto_pr "$TARGET_DIR" "$DOMAIN_NAME" "$BRANCH" "${INITIAL_BASELINE:-0}" "${BASELINE:-0}" "${IMPROVEMENTS:-0}" || true
+    log_bold "═══════════════"
+    echo ""
+  fi
 fi
 
 log_ok "SOSL loop completed."

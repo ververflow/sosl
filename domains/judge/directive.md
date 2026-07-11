@@ -47,10 +47,19 @@ Evaluate each dimension. Use the tools available to you (Read, Glob, Grep, git c
 
 ### 2. Scope Compliance
 - Did the optimizer stay within the allowed scope from the directive?
-- Any changes to forbidden files (backend, tests, config, package.json)?
-- Any `eslint-disable`, `@ts-ignore`, `@ts-expect-error` additions?
+- Any changes to files the injected Scope Directive above marks as FORBIDDEN? (For test-writing / coverage domains, `tests/` is the ALLOWED scope — do not treat it as forbidden; audit its quality in section 2b instead.)
+- Any suppression comments added (`eslint-disable`, `@ts-ignore`, `@ts-expect-error`, `# noqa`, `# type: ignore`, `# pragma: no cover`)?
 - Any new dependencies added?
 - Use `Grep` to search for violations if the diff is large.
+
+### 2b. Test Integrity (coverage / test-writing domains)
+A green suite and a rising number prove nothing about test *quality*: the metric rewards executed lines, so hollow tests can raise coverage while asserting nothing. The diff above is truncated at 1000 lines — use Read/Grep to open EVERY new or changed test file. REJECT if you find:
+- Tests with no assertion, or only trivial ones (`assert True`, `assert 1`, `assert x is not None`).
+- Coverage farming by import: a `test_*` file or `conftest.py` that bulk-imports source modules (`pkgutil.walk_packages`, looped `importlib.import_module`, `__import__`) instead of exercising behavior — this inflates coverage with a tiny, innocuous-looking diff.
+- `@pytest.mark.xfail` (especially `strict=False`) or new `skip`/`skipif` that let wrong or unfinished assertions run without failing the suite (xfail still runs the body and banks coverage).
+- Exception-swallowing that makes a test unfailable: `contextlib.suppress(...)`, bare `except: pass`, or an over-broad `pytest.raises(Exception)`.
+- Side-effecting test code: `subprocess`, network calls, or filesystem writes outside a tmp fixture.
+A large coverage gain backed by few real assertions is a REJECT, not an APPROVE.
 
 ### 3. Guard Patterns
 - How many attempts were reverted vs committed?

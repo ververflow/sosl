@@ -8,6 +8,25 @@
 
 ---
 
+## v1.2.0 — Guard/Judge hardening from an adversarial challenge (July 11, 2026)
+
+Ran SOSL against its first real target with three adversarial reviewers pointed at the framework itself. They found that the safety story had holes, and a live run found a HIGH-severity abort bug. All fixed and covered by the offline suite (now 65 checks).
+
+### What changed
+- **Measurement failure no longer aborts the run** (B1): when every sample fails (a transient DB/timeout, or a change that breaks the metric harness), `measure_robust` returns non-zero and the bare `measure_result=$(...)` assignment tripped `set -e`, killing the whole night. It now falls back to a 0 score so the iteration reverts and the loop continues. Offline scenario s16 pins it (teeth-checked: without the fix the run aborts at 0 iterations).
+- **Judge is no longer advisory-only** (J0): its verdict was swallowed by `|| true` and auto-PR ran unconditionally, so a **REJECT still opened a PR**. The verdict now gates auto-PR — a REJECT leaves the branch local for a human.
+- **Judge now audits test quality** (J1): the review directive gained a Test Integrity checklist (assertionless/import-farming/xfail/exception-swallowing/side-effecting tests) and its misdirecting line that listed `tests` as forbidden (a perf-domain inheritance) was fixed — for coverage domains, tests are the *allowed* scope to audit, not wave through.
+- **Test-quality guard** (`lib/guards/py_test_quality.py`, new): coverage rewards executed lines and the pattern-based guards never checked whether a test asserts anything. This AST helper hard-fails the unambiguous gaming — trivial-only asserts (`assert True`), bulk import-farming (`walk_packages`/`iter_modules`), `xfail` in any file, broad exception-swallowing (`suppress(Exception)`, `except Exception: pass`) — and warns on assertionless tests (a legit "must not raise" test is shape-identical, so it is surfaced for the Judge, not reverted). Validated at 0 false positives against a real 2,496-function suite. Wired into the example `pytest-coverage` domain; reachable by any domain via the new exported `SOSL_HOME`. Offline scenario s17.
+- **Resume path fixes** (B2/B3): `--resume` never re-populated `SOSL_WT_LINKS` (planting lived in the fresh-start branch), so the scope guard flagged the infra symlinks every iteration and the next revert's `git clean` deleted them; and it never reset the worktree, so a half-finished interrupted iteration got bundled into the next commit. Planting is now an idempotent `plant_wt_links` called on both paths, and resume reverts the worktree first.
+- **Strategy adapts after a turns/budget cap** (L2): `error_max_turns`/`error_max_budget` mean the target was too big for one pass; the next iteration now gets an explicit "narrow your scope" hint instead of repeating the same over-ambitious IMPROVE (a real run burned $1.33 for zero progress walking into the same wall twice).
+- **Smaller robustness fixes**: the revert's `git checkout`/`clean` are guarded against `set -e` (B4); the baseline log shows the real commit threshold instead of a misleading `noise floor: 0.0`; scope-temperature guidance is now stack-neutral (was Next.js/CSS language misfiring on every non-frontend domain).
+- **Test suite bug**: s15 sourcing `utils.sh` silently leaked `set -e` into the suite shell (harmless only while s15 was last) — now contained.
+
+### Why this matters
+Guards are the product. The challenge showed the guards checked diff *patterns* while the metric rewarded executed *lines*, with nothing checking assertion quality and a backstop (the Judge) that was both non-blocking and unprompted for it. The gap is now closed at two layers — a pre-commit test-quality guard and a Judge that actually gates — and the abort/resume bugs that could end or corrupt an unattended night are fixed.
+
+---
+
 ## v1.1.0 — Auto-PR + first-production-target lessons (July 10, 2026)
 
 Everything in this release came out of pointing SOSL at its first real production target (a FastAPI backend with a 3,200-test suite) and watching where it cracked.

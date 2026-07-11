@@ -105,6 +105,42 @@ for entry in reversed(entries):
 PYEOF
 }
 
+# Extra guidance when the previous iteration ran out of turns or budget.
+# `error_max_turns`/`error_max_budget` mean the target was too big to finish in
+# one pass — repeating the same IMPROVE walks into the same wall (this cost a real
+# HoutCalc run $1.33 for zero progress). Nudge the next iteration smaller. Prints
+# a hint, or nothing if the last iteration didn't hit a cap.
+# Usage: get_retry_hint /target → prints hint text (may be empty)
+get_retry_hint() {
+  local target_dir="$1"
+  local py_dir
+  py_dir=$(to_py_path "$target_dir")
+
+  python3 - "$py_dir" <<'PYEOF'
+import json, os, sys
+
+py_dir = sys.argv[1]
+jsonl_path = os.path.join(py_dir, '.sosl', 'experiments.jsonl')
+if not os.path.exists(jsonl_path):
+    sys.exit(0)
+
+with open(jsonl_path, encoding='utf-8') as f:
+    entries = [json.loads(line) for line in f if line.strip()]
+if not entries:
+    sys.exit(0)
+
+summary = entries[-1].get('summary', '')
+if 'error_max_turns' in summary or 'error_max_budget' in summary:
+    print(
+        "## Narrow your scope\n"
+        "The previous attempt ran out of turns/budget before finishing — the target "
+        "was too large for one iteration. Pick a SMALLER, more focused change this "
+        "time: a single small module or a handful of cases, not a large file. Read "
+        "less, change less, and finish well within the budget."
+    )
+PYEOF
+}
+
 # Generate mode-specific prompt guidance
 # Usage: get_mode_guidance "DEBUG" "tsc error in Button.tsx" → prints guidance text
 get_mode_guidance() {

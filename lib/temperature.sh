@@ -14,19 +14,17 @@ progress = iter / max_iter if max_iter > 0 else 1.0
 
 if progress < 0.33:
     guidance = '''Phase: EXPLORATION (iterations 1-33%)
-You may make larger architectural changes: restructuring imports, adding code splitting
-boundaries, reorganizing component structure, introducing new optimization patterns.
-Bold changes are welcome — this is the time for high-impact improvements.'''
+Bold, high-impact changes are welcome now. You may attempt larger or structural
+changes and try genuinely different approaches to move the metric. Favor the change
+with the highest expected payoff, always within the directive's allowed scope.'''
 elif progress < 0.66:
     guidance = '''Phase: REFINEMENT (iterations 33-66%)
-Make moderate, targeted changes. Focus on specific bottlenecks identified in earlier
-iterations. No large restructuring — build on what already works. Target the weakest
-remaining audit items.'''
+Make moderate, targeted changes. Build on what already works (see session history)
+and address the weakest remaining areas. Avoid large restructuring.'''
 else:
     guidance = '''Phase: POLISHING (iterations 66-100%)
-Only small, safe micro-optimizations. Attribute-level changes, minor CSS tweaks,
-configuration tuning, preload hints, defer attributes. Do not restructure code.
-Focus on squeezing the last few points from known bottlenecks.'''
+Only small, safe, low-risk changes now. Tighten and tune what already works; do not
+restructure. Focus on squeezing the last gains from known weak spots.'''
 
 print(guidance)
 PYEOF
